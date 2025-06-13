@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36127.28 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SensotronicaIL", "SensotronicaIL\SensotronicaIL.csproj", "{0716DE16-8EFB-400A-B8C9-A20908B0974E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestProject", "TestProject\TestProject.csproj", "{5CCDDF85-9185-4E2D-9854-606E0DADF18B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0716DE16-8EFB-400A-B8C9-A20908B0974E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0716DE16-8EFB-400A-B8C9-A20908B0974E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0716DE16-8EFB-400A-B8C9-A20908B0974E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0716DE16-8EFB-400A-B8C9-A20908B0974E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5CCDDF85-9185-4E2D-9854-606E0DADF18B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5CCDDF85-9185-4E2D-9854-606E0DADF18B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5CCDDF85-9185-4E2D-9854-606E0DADF18B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5CCDDF85-9185-4E2D-9854-606E0DADF18B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8F97CB89-752F-48E2-A29A-876B2B4E4491}
+	EndGlobalSection
+EndGlobal
