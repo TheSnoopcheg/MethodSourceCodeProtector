@@ -44,7 +44,18 @@ public class CecilMethodBodyCloner
             }
             else
             {
-                newVarType = _targetModule.ImportReference(oldVar.VariableType);
+                if(oldVar.VariableType is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
+                {
+                    var newElementType = _targetModule.ImportReference(genericInstanceType.ElementType);
+                    var newDeclaringType = new GenericInstanceType(newElementType);
+                    foreach (var p in _sourceMethod.GenericParameters)
+                    {
+                        newDeclaringType.GenericArguments.Add(_targetMethod.GenericParameters[p.Position]);
+                    }
+                    newVarType = newDeclaringType;
+                }
+                else
+                    newVarType = _targetModule.ImportReference(oldVar.VariableType);
             }
             var newVar = new VariableDefinition(newVarType);
             _targetMethod.Body.Variables.Add(newVar);

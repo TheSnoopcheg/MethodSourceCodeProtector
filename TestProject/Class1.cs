@@ -27,6 +27,7 @@
 
 
             int b = 3;
+            b += i;
 
             Person<int> p = new Person<int> { Name = "Test" };
 
