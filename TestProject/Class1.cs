@@ -3,7 +3,7 @@
     public class Class1
     {
         private int i = 0;
-        private event Action handler;
+        public event Action handler;
         private List<int> ints = new List<int>();
         public Class1(int I )
         {
@@ -13,42 +13,43 @@
         {
             MethodB<string>(2, "Hello world");
         }
-        public T MethodB<T>(int n, object smth)
+        public void MethodB<T>(int n, T smth)
         {
-            i++;
-            ints.Add(i);
-            int[] arr = new int[ints.Count];
-            ints.CopyTo(0, arr, 0, ints.Count);
-
-            if(i == 4)
-                handler += MethodA;
-            else
-                handler -= MethodA;
-
-
-            int b = 3;
-            b += i;
-
-            Person<int> p = new Person<int> { Name = "Test" };
-
             Func<int, string> func = (x) => $"Value: {++x}";
 
             Console.WriteLine(func(i));
+            
+            //i++;
+            //ints.Add(i);
+            //int[] arr = new int[ints.Count];
+            //ints.CopyTo(0, arr, 0, ints.Count);
 
-            var f = () => $"Value lambda: {b}";
-            Console.WriteLine(f());
+            //if (i == 4)
+            //    handler += MethodA;
+            //else
+            //    handler -= MethodA;
 
-            handler?.Invoke();
+            //int b = 3;
+            //b += i;
 
-            p.SetId(i);
-            p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
-            Console.WriteLine($"{smth} {i} {p.Name}");
+            //var f = () => $"Value lambda: {b}";
+            //Console.WriteLine(f());
 
-            foreach (var item in ints)
-            {
-                Console.WriteLine(item);
-            }
-            return (T)smth;
+            //Person<int> p = new Person<int> { Name = "Test" };
+
+
+            //handler?.Invoke();
+
+            //Console.WriteLine(i);
+
+            //p.SetId(i);
+            //p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
+            //Console.WriteLine($"{smth} {i} {p.Name}");
+
+            //foreach (var item in ints)
+            //{
+            //    Console.WriteLine(item);
+            //}
         }
     }
 }

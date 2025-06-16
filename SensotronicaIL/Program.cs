@@ -1,7 +1,7 @@
 ﻿using Mono.Cecil;
+using Mono.Cecil.Rocks;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.Loader;
 using TestProject;
 using NETMethodAttributes = System.Reflection.MethodAttributes;
 using NETTypeAttributes = System.Reflection.TypeAttributes;
@@ -13,28 +13,30 @@ namespace SensotronicaIL
     {
         static void Main(string[] args)
         {
-            MONO_VERSION(Globals.FULLPATH, true);
-            //MONO_VERSION(Globals.NEWPATH, false);
-            
+            //MONO_VERSION(Globals.FULLPATH, true, false);
+            MONO_VERSION(Globals.FULLPATH, false, true);
+            MONO_VERSION(Globals.NEWPATH, false, true);
+
             AssemblyDefinition asm = AssemblyDefinition.ReadAssembly(Globals.NEWPATH);
             var orType = asm.MainModule.GetType("Test.Test1");
             var orMethod = orType.Methods.FirstOrDefault(m => m.Name == "MethodB");
             DynamicMethod method = new DynamicMethod(
                 "TestMethodB",
-                typeof(Person<int>),
-                new Type[] { typeof(Class1), typeof(int), typeof(Person<int>) },
+                null,
+                new Type[] { typeof(Class1), typeof(int), typeof(string) },
                 typeof(Class1).Module);
             var il = method.GetILGenerator();
-            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, orMethod, null, new Type[] {typeof(Person<int>) });
+            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, orMethod, null, new Type[] {typeof(string) });
             cloner.EmitBody();
-            //var smth = (Action<Class1, string>)method.CreateDelegate(typeof(Action<Class1, string>));
-            var smth = (Func<Class1, int, Person<int>, Person<int>>)method.CreateDelegate(typeof(Func<Class1, int, Person<int>, Person<int>>));
+
+            var smth = (Action<Class1, int, string>)method.CreateDelegate(typeof(Action<Class1, int, string>));
+            //var smth = (Func<Class1, int, Person<int>, Person<int>>)method.CreateDelegate(typeof(Func<Class1, int, Person<int>, Person<int>>));
             Class1 c = new Class1(3);
             Person<int> p = new Person<int> { Name = "Test1" };
             try
             {
-                Console.WriteLine(smth(c, 1, p));
-                //smth(c, "I don't know why it works");
+                //Console.WriteLine(smth(c, 1, p));
+                smth(c, 2, "I don't know why it works");
             }
             catch (InvalidProgramException ex)
             {
@@ -44,6 +46,50 @@ namespace SensotronicaIL
             {
                 Console.WriteLine(ex.Message);
             }
+            Console.ReadLine();
+        }
+        static void MONO_VERSION(string path, bool proc, bool showCode)
+        {
+            ModuleDefinition module = ModuleDefinition.ReadModule(path);
+            foreach (var type in module.GetAllTypes())
+            {
+                Console.WriteLine($"{type.Name}\t{type.BaseType}");
+                foreach (var method in type.Methods)
+                {
+                    Console.WriteLine($"\t {method.Name}");
+                    if (method.Name == "MethodB")
+                    {
+                        //foreach (var prop in method.GetType().GetProperties())
+                        //{
+                        //    Console.WriteLine($"{prop.Name}\t{prop.GetValue(method)}");
+                        //}
+                        if (showCode)
+                        {
+                            foreach (var instruction in method.Body.Instructions)
+                            {
+                                Console.WriteLine(instruction);
+                            }
+                        }
+                        if (proc)
+                        {
+                            MonoAssemblyCreator.CreateAssembly(method);
+
+                            EraseMethodAnsSave(method, module);
+
+                        }
+                    }
+                }
+            }
+        }
+        static void EraseMethodAnsSave(MethodDefinition method, ModuleDefinition module)
+        {
+            method.Body.Instructions.Clear();
+            //method.Body.Variables.Clear();
+            method.Body.ExceptionHandlers.Clear();
+            var il = method.Body.GetILProcessor();
+            il.Append(il.Create(Mono.Cecil.Cil.OpCodes.Ret));
+
+            module.Write(Globals.NEWSPATH);
         }
 
         static void WriteByteArrays()
@@ -75,7 +121,7 @@ namespace SensotronicaIL
             var type = module.DefineType("Type", NETTypeAttributes.Public | NETTypeAttributes.Class);
             var method = type.DefineMethod("method", NETMethodAttributes.Public, null, new Type[] { });
             var il = method.GetILGenerator();
-            foreach(var v in methodDef.Body.Variables)
+            foreach (var v in methodDef.Body.Variables)
             {
                 il.DeclareLocal(Type.GetType(v.VariableType.FullName));
             }
@@ -86,40 +132,22 @@ namespace SensotronicaIL
             using var stream = new MemoryStream();
             asm.Save(stream);
             stream.Seek(0, SeekOrigin.Begin);
-            Assembly assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
-            var method1 = assembly.GetType("Type").GetMethod("method");
-
-            Console.WriteLine("Created assembly byte array:");
-            foreach (var b in method1.GetMethodBody().GetILAsByteArray())
+            AssemblyDefinition asm1 = AssemblyDefinition.ReadAssembly(stream);
+            var method1 = asm1.MainModule.GetType("Type").Methods.FirstOrDefault(m => m.Name == "method");
+            foreach(var i in method1.Body.Instructions)
             {
-                Console.Write(b);
+                Console.WriteLine(i);
             }
             Console.WriteLine();
-        }
-        static void MONO_VERSION(string path, bool proc)
-        {
-            ModuleDefinition module = ModuleDefinition.ReadModule(path);
-            foreach (var type in module.Types)
-            {
-                Console.WriteLine($"{type.Name}\t{type.BaseType}");
-                foreach (var method in type.Methods)
-                {
-                    Console.WriteLine(method.Name);
-                    if (method.Name == "MethodB")
-                    {
-                        //foreach (var prop in method.GetType().GetProperties())
-                        //{
-                        //    Console.WriteLine($"{prop.Name}\t{prop.GetValue(method)}");
-                        //}
-                        foreach (var instruction in method.Body.Instructions)
-                        {
-                            Console.WriteLine(instruction);
-                        }
-                        if(proc)
-                            MonoAssemblyCreator.CreateAssembly(method);
-                    }
-                }
-            }
+            //Assembly assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
+            //var method1 = assembly.GetType("Type").GetMethod("method");
+
+            //Console.WriteLine("Created assembly byte array:");
+            //foreach (var b in method1.GetMethodBody().GetILAsByteArray())
+            //{
+            //    Console.Write(b);
+            //}
+            //Console.WriteLine();
         }
     }
 }

@@ -47,7 +47,7 @@ public static class MonoAssemblyCreator
             _method.Parameters.Add(newParam);
         }
         CecilMethodBodyCloner cl = new CecilMethodBodyCloner(method, _method);
-        cl.FinishMethod();
+        cl.Clone();
         MethodDefinition constructor = new MethodDefinition(".ctor", MethodAttributes.Public | MethodAttributes.HideBySig |
             MethodAttributes.RTSpecialName | MethodAttributes.SpecialName, asm.MainModule.TypeSystem.Void);
         _type.Methods.Add(constructor);
