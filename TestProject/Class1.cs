@@ -1,4 +1,7 @@
-﻿namespace TestProject
+﻿using ExternalDependency;
+using System.Threading.Tasks;
+
+namespace TestProject
 {
     public class Class1
     {
@@ -13,43 +16,47 @@
         {
             MethodB<string>(2, "Hello world");
         }
-        public void MethodB<T>(int n, T smth)
+        public T MethodB<T>(int n, T smth)
         {
-            Func<int, string> func = (x) => $"Value: {++x}";
+            Func<int, string> func = (x) => $"Value: {x}";
 
             Console.WriteLine(func(i));
-            
-            //i++;
-            //ints.Add(i);
-            //int[] arr = new int[ints.Count];
-            //ints.CopyTo(0, arr, 0, ints.Count);
 
-            //if (i == 4)
-            //    handler += MethodA;
-            //else
-            //    handler -= MethodA;
+            long s = SquareProcessor.Square(i);
 
-            //int b = 3;
-            //b += i;
+            Console.WriteLine($"Square of {i} is {s}");
 
-            //var f = () => $"Value lambda: {b}";
-            //Console.WriteLine(f());
+            i++;
+            ints.Add(i);
+            int[] arr = new int[ints.Count];
+            ints.CopyTo(0, arr, 0, ints.Count);
 
-            //Person<int> p = new Person<int> { Name = "Test" };
+            if (i == 4)
+                handler += MethodA;
+            else
+                handler -= MethodA;
 
+            int b = 3;
+            b += i;
 
-            //handler?.Invoke();
+            var f = () => $"Value lambda: {b}";
+            Console.WriteLine(f());
 
-            //Console.WriteLine(i);
+            Person<int> p = new Person<int> { Name = "Test" };
 
-            //p.SetId(i);
-            //p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
-            //Console.WriteLine($"{smth} {i} {p.Name}");
+            handler?.Invoke();
 
-            //foreach (var item in ints)
-            //{
-            //    Console.WriteLine(item);
-            //}
+            Console.WriteLine(i);
+
+            p.SetId(i);
+            p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
+            Console.WriteLine($"{smth} {i} {p.Name}");
+
+            foreach (var item in ints)
+            {
+                Console.WriteLine(item);
+            }
+            return smth;
         }
     }
 }

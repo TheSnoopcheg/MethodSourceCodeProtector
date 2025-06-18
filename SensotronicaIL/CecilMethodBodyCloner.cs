@@ -168,6 +168,10 @@ public class CecilMethodBodyCloner
                                 newArg = _targetMethod.DeclaringType.GenericParameters[gp.Position];
                             }
                         }
+                        else if (arg.IsGenericInstance)
+                        {
+                            newArg = ResolveDisplayClassTypeReference(arg);
+                        }
                         else
                         {
                             newArg = _context.TargetModule.ImportReference(arg, _targetMethod);
@@ -251,7 +255,21 @@ public class CecilMethodBodyCloner
         }
         return newInstr;
     }
+    private TypeReference ResolveDisplayClassTypeReference(TypeReference type)
+    {
+        if(type is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
+        {
+            var newElementType = _context.TargetModule.ImportReference(genericInstanceType.ElementType);
+            var newDeclaringType = new GenericInstanceType(newElementType);
 
+            foreach (var p in _sourceMethod.GenericParameters)
+            {
+                newDeclaringType.GenericArguments.Add(_targetMethod.GenericParameters[p.Position]);
+            }
+            return newDeclaringType;
+        }
+        return type;
+    }
     private MemberReference ResolveDisplayClassMemberReference(MemberReference member)
     {
         var declaringType = member.DeclaringType;

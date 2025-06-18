@@ -214,7 +214,7 @@ namespace SensotronicaIL
             }
             if (typeRef.IsByReference)
             {
-                return ResolveType(typeRef.GetElementType())?.MakeByRefType();
+                return ResolveType(typeRef.GetElementType(), context)?.MakeByRefType();
             }
             string typeFullName = typeRef.FullName.Replace('/', '+');
             if (typeRef.Scope.Name == _sourceAssembly.GetName().Name || typeRef.Scope.Name == Path.GetFileNameWithoutExtension(_sourceAssembly.Location))

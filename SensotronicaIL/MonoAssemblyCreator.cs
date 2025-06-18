@@ -5,11 +5,12 @@ public static class MonoAssemblyCreator
 {
     public static void CreateAssembly(MethodDefinition method)
     {
-        AssemblyNameDefinition asmName = new AssemblyNameDefinition("Test", new Version(1, 0, 0, 0));
-        AssemblyDefinition asm = AssemblyDefinition.CreateAssembly(asmName, "Test", ModuleKind.Dll);
-        TypeDefinition _type = new TypeDefinition("Test", "Test1", TypeAttributes.Public | TypeAttributes.Class, asm.MainModule.TypeSystem.Object);
+        string name = $"Test";
+        AssemblyNameDefinition asmName = new AssemblyNameDefinition(name, new Version(1, 0, 0, 0));
+        AssemblyDefinition asm = AssemblyDefinition.CreateAssembly(asmName, name, ModuleKind.Dll);
+        TypeDefinition _type = new TypeDefinition(name, "Test1", TypeAttributes.Public | TypeAttributes.Class, asm.MainModule.TypeSystem.Object);
         asm.MainModule.Types.Add(_type);
-        MethodDefinition _method = new MethodDefinition("MethodB", method.Attributes, asm.MainModule.TypeSystem.Void);
+        MethodDefinition _method = new MethodDefinition(method.Name, method.Attributes, asm.MainModule.TypeSystem.Void);
         foreach (var p in method.GenericParameters)
         {
             var newGenericParam = new GenericParameter(p.Name, _method);
