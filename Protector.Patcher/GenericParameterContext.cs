@@ -1,7 +1,7 @@
 ﻿using Mono.Cecil;
 using Mono.Collections.Generic;
 
-namespace SensotronicaIL;
+namespace Protector.Patcher;
 
 public class GenericParameterContext : IGenericParameterContext
 {

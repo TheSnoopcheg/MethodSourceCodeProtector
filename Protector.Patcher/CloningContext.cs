@@ -1,5 +1,7 @@
 ﻿using Mono.Cecil;
 
+namespace Protector.Patcher;
+
 /// <summary>
 /// Holds the shared state for a recursive cloning operation, mapping old members to new ones.
 /// </summary>

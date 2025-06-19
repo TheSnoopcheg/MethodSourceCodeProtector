@@ -1,5 +1,6 @@
 ﻿using Mono.Cecil;
-using SensotronicaIL;
+
+namespace Protector.Patcher;
 
 // TODO: Add support for generic parameters, custom attributes, and other members as needed.
 

@@ -15,9 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-	  <ProjectReference Include="..\TestProject\TestProject.csproj">
-<!--<PrivateAssets>runtime</PrivateAssets>-->
-      </ProjectReference>
+    <ProjectReference Include="..\Protector.Patcher\Protector.Patcher.csproj" />
   </ItemGroup>
 
 </Project>

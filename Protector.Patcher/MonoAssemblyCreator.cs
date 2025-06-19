@@ -1,6 +1,6 @@
 ﻿using Mono.Cecil;
 
-namespace SensotronicaIL;
+namespace Protector.Patcher;
 public static class MonoAssemblyCreator
 {
     public static void CreateAssembly(MethodDefinition method)

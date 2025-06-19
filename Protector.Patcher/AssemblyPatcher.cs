@@ -8,7 +8,7 @@ using Mono.Cecil.Rocks;
 using Newtonsoft.Json;
 using System.Text;
 
-namespace SensotronicaIL;
+namespace Protector.Patcher;
 
 public class AssemblyPatcher
 {
@@ -17,7 +17,7 @@ public class AssemblyPatcher
     private AssemblyDefinition _assembly;
     public AssemblyPatcher(AssemblyDefinition assembly)
     {
-        _assembly = assembly ?? throw new ArgumentNullException(nameof(assembly), "Assembly cannot be null.");
+        _assembly = assembly ?? throw new ArgumentNullException(nameof(assembly), "[PATCHER]: Assembly cannot be null.");
     }
     public void PatchAssembly()
     {
@@ -26,8 +26,8 @@ public class AssemblyPatcher
             if(TryPatchType(op.Type, out var field))
             {
                 PatchConstructor(op.Type, field);
-                PatchMethod(op.Method, field);
                 var asm = CreateAssembly(op.Method);
+                PatchMethod(op.Method, field);
                 var nativeObject = new NativeObject
                 {
                     Name = $"{op.Method.Module.Name}.{op.Method.Name}`{op.Method.GenericParameters.Count}",
@@ -37,36 +37,49 @@ public class AssemblyPatcher
             }
             else
             {
-                throw new InvalidOperationException($"Type {op.Type.FullName} already has a provider field.");
+                throw new InvalidOperationException($"[PATCHER]: Type {op.Type.FullName} already has a provider field.");
             }
         }
+        Console.WriteLine($"[PATCHER]: Patching completed for assembly {_assembly.Name.Name}.");
         string nativeDll = JsonConvert.SerializeObject(_nativeObjects, Formatting.Indented);
         File.WriteAllBytes(Globals.NATIVEDLL, Encoding.UTF8.GetBytes(nativeDll));
         _assembly.Write(Globals.NEWDLLPATH(_assembly.Name.Name));
         _assembly.Dispose();
+        Console.WriteLine($"[PATCHER]: Assembly {_assembly.Name.Name} patched and written to {Globals.NEWDLLPATH(_assembly.Name.Name)}.");
     }
 
     public void AddOperation(PatchOperation operation)
     {
         if(operation.Type.Module.Assembly != _assembly)
         {
-            throw new InvalidOperationException($"Operation type {operation.Type.FullName} does not belong to the assembly being patched.");
+            throw new InvalidOperationException($"[PATCHER]: Operation type {operation.Type.FullName} does not belong to the assembly being patched.");
         }
         _operations.Add(operation);
     }
+    public void RemoveOperation(PatchOperation operation)
+    {
+        if(operation.Type.Module.Assembly != _assembly)
+        {
+            throw new InvalidOperationException($"[PATCHER]: Operation type {operation.Type.FullName} does not belong to the assembly being patched.");
+        }
+        _operations.Remove(operation);
+    }   
 
     private void PatchConstructor(TypeDefinition type, FieldDefinition field)
     {
         var constructor = type.Methods.FirstOrDefault(m => m.Name == ".cctor" && m.IsStatic && m.IsSpecialName);
         if (constructor is not null)
         {
+            Console.WriteLine($"[PATCHER]: Type {type.FullName} already has a static constructor.");
             var body = constructor.Body;
             var il = body.GetILProcessor();
             il.InsertBefore(body.Instructions.Last(), il.Create(OpCodes.Newobj, type.Module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), ".ctor", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public))));
             il.Emit(OpCodes.Stsfld, field);
+            Console.WriteLine($"[PATCHER]: Static constructor patched for type {type.FullName}.");
         }
         else
         {
+            Console.WriteLine($"[PATCHER]: Type {type.FullName} does not have a static constructor, creating one.");
             constructor = new MethodDefinition(".cctor", MONOMethodAttributes.Private | MONOMethodAttributes.Static | MONOMethodAttributes.HideBySig | MONOMethodAttributes.SpecialName | MONOMethodAttributes.RTSpecialName, type.Module.TypeSystem.Void);
             type.Methods.Add(constructor);
             var body = constructor.Body;
@@ -74,6 +87,7 @@ public class AssemblyPatcher
             il.Emit(OpCodes.Newobj, type.Module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), ".ctor", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
             il.Emit(OpCodes.Stsfld, field);
             il.Emit(OpCodes.Ret);
+            Console.WriteLine($"[PATCHER]: Static constructor created and patched for type {type.FullName}.");
         }
     }
     private bool TryPatchType(TypeDefinition type, out FieldDefinition field)
@@ -81,16 +95,20 @@ public class AssemblyPatcher
         var providerField = type.Fields.FirstOrDefault(f => f.Name == "_provider");
         if(providerField is not null)
         {
+            Console.WriteLine($"[PATCHER]: Type {type.FullName} already has a provider field.");
             field = providerField;
             return false;
         }
+        Console.WriteLine($"[PATCHER]: Adding provider field to type {type.FullName}.");
         providerField = new FieldDefinition("_provider", Mono.Cecil.FieldAttributes.Private | Mono.Cecil.FieldAttributes.Static, type.Module.ImportReference(typeof(DynamicMethodProvider)));
         type.Fields.Add(providerField);
         field = providerField;
+        Console.WriteLine($"[PATCHER]: Provider field added: {providerField.FullName}");
         return true;
     }
     private void PatchMethod(MethodDefinition method, FieldDefinition field)
     {
+        Console.WriteLine($"[PATCHER]: Patching method {method.FullName} in type {method.DeclaringType.FullName}.");
         var module = method.Module;
         var body = method.Body;
         body.Instructions.Clear();
@@ -108,13 +126,23 @@ public class AssemblyPatcher
 
         var argTypes = new VariableDefinition(module.ImportReference(typeof(System.Type)).MakeArrayType());
         body.Variables.Add(argTypes);
-        il.Emit(OpCodes.Ldc_I4, 1);
-        il.Emit(OpCodes.Newarr, module.ImportReference(typeof(System.Type)));
-        il.Emit(OpCodes.Dup);
-        il.Emit(OpCodes.Ldc_I4, 0);
-        il.Emit(OpCodes.Ldtoken, method.GenericParameters[0]);
-        il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
-        il.Emit(OpCodes.Stelem_Ref);
+        if (method.HasGenericParameters)
+        {
+            il.Emit(OpCodes.Ldc_I4, method.GenericParameters.Count);
+            il.Emit(OpCodes.Newarr, module.ImportReference(typeof(System.Type)));
+            for(int i = 0; i < method.GenericParameters.Count; i++)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, i);
+                il.Emit(OpCodes.Ldtoken, method.GenericParameters[i]);
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+                il.Emit(OpCodes.Stelem_Ref);
+            }
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldnull);
+        }
         il.Emit(OpCodes.Stloc, argTypes);
 
         var del = new VariableDefinition(module.ImportReference(typeof(Delegate)));
@@ -125,21 +153,60 @@ public class AssemblyPatcher
         il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), "GetDelegate", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Reflection.MethodInfo", "System.Type[]")));
         il.Emit(OpCodes.Stloc, del);
 
+
+        var res = new VariableDefinition(module.TypeSystem.Object);
+        body.Variables.Add(res);
         il.Emit(OpCodes.Ldloc, del);
-        il.Emit(OpCodes.Ldc_I4, 2);
-        il.Emit(OpCodes.Newarr, module.TypeSystem.Object);
-        il.Emit(OpCodes.Dup);
-        il.Emit(OpCodes.Ldc_I4, 0);
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Stelem_Ref);
-        il.Emit(OpCodes.Dup);
-        il.Emit(OpCodes.Ldc_I4, 1);
-        il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Box, method.GenericParameters[0]);
-        il.Emit(OpCodes.Stelem_Ref);
+        int paramCount = method.Parameters.Count + (method.HasThis ? 1 : 0);
+        if(paramCount > 0)
+        {
+            il.Emit(OpCodes.Ldc_I4, paramCount);
+            il.Emit(OpCodes.Newarr, module.TypeSystem.Object);
+            int i = 0;
+            if(method.HasThis)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, 0);
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Stelem_Ref);
+                i++;
+            }
+            for(;i < paramCount; i++)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, i);
+                il.Emit(OpCodes.Ldarg, i);
+                il.Emit(OpCodes.Box, method.Parameters[i - (method.HasThis ? 1 : 0)].ParameterType);
+                il.Emit(OpCodes.Stelem_Ref);
+            }
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldnull);
+        }
         il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Delegate), "DynamicInvoke", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Object[]")));
-        il.Emit(OpCodes.Pop);
+        il.Emit(OpCodes.Stloc, res);
+
+        if(method.ReturnType != module.TypeSystem.Void)
+        {
+            il.Emit(OpCodes.Ldloc, res);
+            if (method.ReturnType is GenericParameter param)
+            {
+                il.Emit(OpCodes.Unbox_Any, method.GenericParameters[param.Position]);
+            }
+            else if(method.ReturnType.IsValueType)
+            {
+                il.Emit(OpCodes.Unbox_Any, module.ImportReference(method.ReturnType));
+            }
+            else
+            {
+                il.Emit(OpCodes.Castclass, module.ImportReference(method.ReturnType));
+            }
+        }
+
         il.Emit(OpCodes.Ret);
+
+        Console.WriteLine($"[PATCHER]: Method {method.FullName} patched successfully.");
     }
     private byte[] CreateAssembly(MethodDefinition method)
     {
@@ -211,7 +278,7 @@ public class AssemblyPatcher
 
             if (resolvedCtor == null)
             {
-                throw new InvalidOperationException($"Failed to resolve ctor [{declaringType}({string.Join(',', paramTypes)})");
+                throw new InvalidOperationException($"[PATCHER]: Failed to resolve ctor [{declaringType}({string.Join(',', paramTypes)})");
             }
 
             return resolvedCtor;
@@ -225,7 +292,7 @@ public class AssemblyPatcher
 
         if (resolvedMethod == null)
         {
-            throw new InvalidOperationException($"Failed to resolve method {declaringType}.{methodName}({string.Join(',', paramTypes)})");
+            throw new InvalidOperationException($"[PATCHER]: Failed to resolve method {declaringType}.{methodName}({string.Join(',', paramTypes)})");
         }
 
         return resolvedMethod;

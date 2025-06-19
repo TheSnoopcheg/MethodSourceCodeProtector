@@ -1,6 +1,6 @@
 ﻿using Mono.Cecil;
 
-namespace SensotronicaIL.Extensions;
+namespace Protector.Patcher.Extensions;
 
 public static class CecilExtensions
 {

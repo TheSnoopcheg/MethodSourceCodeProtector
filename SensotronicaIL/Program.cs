@@ -1,161 +1,152 @@
 ﻿using Mono.Cecil;
-using Mono.Cecil.Rocks;
-using System.Reflection;
-using System.Reflection.Emit;
-using TestProject;
-using NETMethodAttributes = System.Reflection.MethodAttributes;
-using NETTypeAttributes = System.Reflection.TypeAttributes;
+using Protector.Patcher;
 
-namespace SensotronicaIL
+namespace Protector.Visual;
+
+public enum MenuOptionType
 {
-    internal class Program
+    None,
+    Assembly,
+    Module,
+    Type
+}
+public record class MenuOption(object Reference);
+
+internal class Program
+{
+    static MenuOptionType currentState = MenuOptionType.None;
+    static Stack<MenuOption> menuStack = new Stack<MenuOption>();
+    static List<object> options = new List<object>();
+    static object? selectedMember;
+    static AssemblyPatcher patcher;
+    static List<MethodDefinition> methodsToPatch = new List<MethodDefinition>();
+
+    static void Main(string[] args)
     {
-        static void Main(string[] args)
+        string path = string.Empty;
+        int selected = 0;
+        bool isOut = false;
+        if (args.Length == 0)
         {
-            MONO_VERSION(Globals.FULLPATH, true, true);
-            //MONO_VERSION(Globals.NEWPATH, false, true);
-            //MONO_VERSION(Globals.NEWSPATH, false, true);
-
-            DynamicMethodProvider provider = new DynamicMethodProvider();
-
-            Assembly asm = Assembly.LoadFile(Globals.FULLPATH);
-            var type = asm.GetType("TestProject.Class1");
-            var method = type.GetMethod("MethodB");
-            var typeInstance = Activator.CreateInstance(type, 3);
-            var del = provider.GetDelegate(method, typeof(Person<int>), new Type[] { typeof(Person<int>) });
-            var parameters = new object[] { typeInstance, 1, new Person<int> { Name = "Test1" } };
-            del.DynamicInvoke(parameters);
-
-            //AssemblyDefinition asm = AssemblyDefinition.ReadAssembly(Globals.NEWPATH);
-            //var orType = asm.MainModule.GetType("Test.Test1");
-            //var orMethod = orType.Methods.FirstOrDefault(m => m.Name == "MethodB");
-            //DynamicMethod method = new DynamicMethod(
-            //    "TestMethodB",
-            //    typeof(Person<int>),
-            //    new Type[] { typeof(Class1), typeof(int), typeof(Person<int>) },
-            //    typeof(Class1).Module,
-            //    true);
-            //var il = method.GetILGenerator();
-            //CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, orMethod, null, new Type[] { typeof(Person<int>) });
-            //cloner.EmitBody();
-
-            ////var smth = (Action<Class1>)method.CreateDelegate(typeof(Action<Class1>));
-            //var sm = typeof(Func<Class1, int, Person<int>, Person<int>>);
-            //var smth = (Func<Class1, int, Person<int>, Person<int>>)method.CreateDelegate(typeof(Func<Class1, int, Person<int>, Person<int>>));
-            //Class1 c = new Class1(3);
-            //Person<int> p = new Person<int> { Name = "Test1" };
-            //try
-            //{
-            //    Console.WriteLine(smth(c, 1, p));
-            //    //smth(c);
-            //}
-            //catch (InvalidProgramException ex)
-            //{
-            //    Console.WriteLine(ex.Message);
-            //}
-            //catch (Exception ex)
-            //{
-            //    Console.WriteLine(ex.Message);
-            //}
-            Console.ReadLine();
+            Console.Write("Enter the path to the directory containing the dll to process: ");
+            path = Console.ReadLine();
         }
-        static void MONO_VERSION(string path, bool proc, bool showCode)
+        else
         {
-            ModuleDefinition module = ModuleDefinition.ReadModule(path);
-            foreach (var type in module.GetAllTypes())
+            path = args[0];
+        }
+        try
+        {
+            UpdateOptionsByState(path);
+            ConsoleKey key;
+            do
             {
-                Console.WriteLine($"{type.Name}\t{type.BaseType}");
-                foreach (var method in type.Methods)
+                Console.Clear();
+                Console.WriteLine(selectedMember);
+                Console.WriteLine();
+                for (int i = 0; i < options.Count; i++)
                 {
-                    Console.WriteLine($"\t {method.Name}");
-                    if (method.Name == "MethodB")
+                    if (i == selected)
                     {
-                        //foreach (var prop in method.GetType().GetProperties())
-                        //{
-                        //    Console.WriteLine($"{prop.Name}\t{prop.GetValue(method)}");
-                        //}
-                        if (showCode)
-                        {
-                            foreach (var instruction in method.Body.Instructions)
-                            {
-                                Console.WriteLine(instruction);
-                            }
-                        }
-                        if (proc)
-                        {
-                            MonoAssemblyCreator.CreateAssembly(method);
-
-                            EraseMethodAnsSave(method, module);
-
-                        }
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("> " + options[i]);
+                        Console.ResetColor();
+                    }
+                    else if (options[i] is MethodDefinition method && methodsToPatch.Contains(method))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("  " + options[i]);
+                        Console.ResetColor();
+                    }
+                    else
+                    {
+                        Console.WriteLine("  " + options[i]);
                     }
                 }
-            }
+                Console.WriteLine("\nPress Enter to select, Up/Down to navigate, Backspace to go back, F to patch, Escape to exit.");
+
+                key = Console.ReadKey(true).Key;
+                switch (key)
+                {
+                    case ConsoleKey.UpArrow:
+                        selected = (selected == 0) ? options.Count - 1 : selected - 1;
+                        break;
+                    case ConsoleKey.DownArrow:
+                        if(options.Count == 0) continue; // Prevents error if options is empty
+                        selected = (selected + 1) % options.Count;
+                        break;
+                    case ConsoleKey.Enter:
+                        if (currentState == MenuOptionType.Type)
+                        {
+                            patcher.AddOperation(new PatchOperation
+                            {
+                                Method = (MethodDefinition)options[selected],
+                                Type = (TypeDefinition)selectedMember!
+                            });
+                            methodsToPatch.Add((MethodDefinition)options[selected]);
+                            continue;
+                        }
+                        menuStack.Push(new MenuOption(options[selected]));
+                        selected = 0;
+                        currentState++;
+                        UpdateOptionsByState(path);
+                        break;
+                    case ConsoleKey.Backspace:
+                        if(menuStack.Count > 1)
+                        {
+                            menuStack.Pop();
+                            selected = 0;
+                            currentState--;
+                            UpdateOptionsByState(path);
+                        }
+                        break;
+                    case ConsoleKey.F:
+                        if (methodsToPatch.Count > 0)
+                        {
+                            patcher.PatchAssembly();
+                            isOut = true;
+                        }
+                        break;
+                }
+
+            } while (key != ConsoleKey.Escape || !isOut);
         }
-        static void EraseMethodAnsSave(MethodDefinition method, ModuleDefinition module)
+        finally
         {
-            method.Body.Instructions.Clear();
-            //method.Body.Variables.Clear();
-            method.Body.ExceptionHandlers.Clear();
-            var il = method.Body.GetILProcessor();
-            il.Append(il.Create(Mono.Cecil.Cil.OpCodes.Ret));
 
-            module.Write(Globals.NEWSPATH);
         }
-
-        static void WriteByteArrays()
+        Console.WriteLine("Exiting...");
+        Console.ReadLine();
+    }
+    static void UpdateOptionsByState(string path)
+    {
+        switch (currentState)
         {
-            byte[] raw = File.ReadAllBytes(Globals.FULLPATH);
-            Assembly asm1 = Assembly.Load(raw);
-            var method1 = asm1.GetType("TestProject.Class1").GetMethod("MethodB");
-            Console.WriteLine("Original byte array:");
-            foreach (var b in method1.GetMethodBody().GetILAsByteArray())
-            {
-                Console.Write(b);
-            }
-            Console.WriteLine();
-            byte[] raw1 = File.ReadAllBytes(Globals.NEWPATH);
-            Assembly asm11 = Assembly.Load(raw1);
-            var method11 = asm11.GetType("Test.Test1").GetMethod("MethodB");
-            Console.WriteLine("Copy (after load) byte array:");
-            foreach (var b in method11.GetMethodBody().GetILAsByteArray())
-            {
-                Console.Write(b);
-            }
-            Console.WriteLine();
-        }
-        static void NET_CreateAssembly(MethodDefinition methodDef)
-        {
-            AssemblyName asmName = new AssemblyName("1TestProject");
-            PersistedAssemblyBuilder asm = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
-            var module = asm.DefineDynamicModule("Module");
-            var type = module.DefineType("Type", NETTypeAttributes.Public | NETTypeAttributes.Class);
-            var method = type.DefineMethod("method", NETMethodAttributes.Public, null, null);
-            var il = method.GetILGenerator();
-            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, methodDef, null, null);
-            cloner.EmitBody();
-            type.CreateType();
+            case MenuOptionType.None:
+                AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(path);
+                patcher = new AssemblyPatcher(assembly);
+                menuStack.Push(new MenuOption(assembly));
+                options = assembly.Modules.Cast<object>().ToList();
+                currentState = MenuOptionType.Assembly;
+                break;
+            case MenuOptionType.Assembly:
+                var asm = (AssemblyDefinition)menuStack.Peek().Reference;
+                selectedMember = asm;
+                options = asm.Modules.Cast<object>().ToList();
+                break;
+            case MenuOptionType.Module:
+                var module = (ModuleDefinition)menuStack.Peek().Reference;
+                selectedMember = module;
+                options = module.Types.Cast<object>().ToList();
+                break;
+            case MenuOptionType.Type:
+                var type = (TypeDefinition)menuStack.Peek().Reference;
+                selectedMember = type;
+                options = type.Methods.Cast<object>().ToList();
+                break;
+            default:
+                throw new InvalidOperationException("Invalid menu state.");
 
-            using var stream = new MemoryStream();
-            //asm.Save(stream);
-            asm.Save(Globals.NEWSPATH);
-            //stream.Seek(0, SeekOrigin.Begin);
-            //AssemblyDefinition asm1 = AssemblyDefinition.ReadAssembly(stream);
-            //var method1 = asm1.MainModule.GetType("Type").Methods.FirstOrDefault(m => m.Name == "method");
-            //foreach(var i in method1.Body.Instructions)
-            //{
-            //    Console.WriteLine(i);
-            //}
-            //Console.WriteLine();
-            //Assembly assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
-            //var method1 = assembly.GetType("Type").GetMethod("method");
-
-            //Console.WriteLine("Created assembly byte array:");
-            //foreach (var b in method1.GetMethodBody().GetILAsByteArray())
-            //{
-            //    Console.Write(b);
-            //}
-            //Console.WriteLine();
         }
     }
 }

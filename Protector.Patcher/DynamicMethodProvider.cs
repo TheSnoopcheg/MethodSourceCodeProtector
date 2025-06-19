@@ -1,42 +1,55 @@
 ﻿using Mono.Cecil;
+using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace SensotronicaIL;
+namespace Protector.Patcher;
 
 public class DynamicMethodProvider
 {
     private readonly ConcurrentDictionary<string, Delegate> _cache = new();
-    public Delegate GetDelegate(MethodInfo method, Type? genericReturnType, Type?[]? genericParamTypes)
+    private List<NativeObject> _nativeObjects = [];
+    public Delegate GetDelegate(MethodInfo method, Type?[]? genericParamTypes)
     {
         return _cache.GetOrAdd(method.Name, _ =>
         {
-            Type delegateType = GetDelegateType(method, genericReturnType, genericParamTypes);
-            AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(Globals.NEWPATH);
-            ModuleDefinition module = assembly.MainModule;
-            TypeDefinition typeDef = module.GetType("Test.Test1") 
-                ?? throw new InvalidOperationException($"Type {method.DeclaringType.FullName} not found in assembly {assembly.Name.Name}.");
-            MethodDefinition? nativeMethod = typeDef.Methods.FirstOrDefault(m => m.Name == method.Name
-                && m.IsStatic == method.IsStatic
-                && m.Parameters.Count == method.GetParameters().Length);
-            if (nativeMethod == null)
-            {
-                throw new InvalidOperationException($"Method {method.Name} not found in type {typeDef.FullName}.");
-            }
+            Type delegateType = GetDelegateType(method, genericParamTypes);
+            MethodDefinition? nativeMethod = GetMethodByName(method);
             DynamicMethod dynamicMethod = new DynamicMethod(
                 method.Name,
-                genericReturnType ?? method.ReturnType,
+                GetReturnType(method, genericParamTypes),
                 GetParametersArray(method, genericParamTypes),
                 method.Module,
                 true);
             var il = dynamicMethod.GetILGenerator();
-            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, nativeMethod, method.DeclaringType?.GetGenericArguments(), genericParamTypes);
+            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, nativeMethod, method.DeclaringType?.GetGenericArguments(), genericParamTypes, Assembly.Load(_nativeObjects.FirstOrDefault(o => o.Name == $"{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}").Assembly));
             cloner.EmitBody();
             return dynamicMethod.CreateDelegate(delegateType);
         });
     }
-
+    private MethodDefinition GetMethodByName(MethodInfo method)
+    {
+        string name = $"{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}";
+        string nativeDll = File.ReadAllText($@"{AppDomain.CurrentDomain.BaseDirectory}\Native.dll");
+        _nativeObjects = JsonConvert.DeserializeObject<List<NativeObject>>(nativeDll)!;
+        NativeObject nativeObject = _nativeObjects.FirstOrDefault(o => o.Name == name)!;
+        var asmBytes = nativeObject.Assembly;
+        AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(asmBytes));
+        ModuleDefinition module = assembly.MainModule;
+        TypeDefinition? typeDef = module.GetType($"<NativeMethod>_{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}.<>");
+        MethodDefinition resMethod = typeDef?.Methods.FirstOrDefault(m => m.Name == method.Name)!;
+        return resMethod;
+    }
+    private static Type? GetReturnType(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    {
+        
+        if (methodInfo.ReturnType.IsGenericParameter)
+        {
+            return genericParamTypes?[methodInfo.ReturnType.GenericParameterPosition];
+        }
+        return methodInfo.ReturnType;
+    }
     private static Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? genericParamTypes)
     {
         List<Type> types = [];
@@ -60,7 +73,7 @@ public class DynamicMethodProvider
     /// </summary>
     /// <param name="methodInfo">The method whose signature to match.</param>
     /// <returns>A delegate Type, like typeof(Action<int>) or typeof(Func<string, bool>).</returns>
-    private static Type GetDelegateType(MethodInfo methodInfo, Type? genericReturnType, Type?[]? genereicParamTypes)
+    private static Type GetDelegateType(MethodInfo methodInfo, Type?[]? genereicParamTypes)
     {
         var parameterTypes = GetParametersArray(methodInfo, genereicParamTypes);
 
@@ -80,7 +93,7 @@ public class DynamicMethodProvider
         }
         else
         {
-            var allTypes = parameterTypes.Concat(new[] { methodInfo.ReturnType.IsGenericParameter ? genericReturnType : methodInfo.ReturnType }).ToArray();
+            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, genereicParamTypes) }).ToArray();
 
             Type openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
             if (openFuncType == null)

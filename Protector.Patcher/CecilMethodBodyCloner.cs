@@ -2,7 +2,7 @@
 using Mono.Cecil.Cil;
 using SensotronicaIL.Extensions;
 
-namespace SensotronicaIL;
+namespace Protector.Patcher;
 public class CecilMethodBodyCloner
 {
     private readonly MethodDefinition _sourceMethod;

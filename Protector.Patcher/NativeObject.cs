@@ -1,4 +1,4 @@
-﻿namespace SensotronicaIL;
+﻿namespace Protector.Patcher;
 
 public class NativeObject
 {
