@@ -3,7 +3,7 @@
 namespace Protector.Patcher;
 public static class MonoAssemblyCreator
 {
-    public static void CreateAssembly(MethodDefinition method)
+    public static void CreateAssembly(MethodDefinition method, string path)
     {
         string name = $"Test";
         AssemblyNameDefinition asmName = new AssemblyNameDefinition(name, new Version(1, 0, 0, 0));
@@ -54,6 +54,6 @@ public static class MonoAssemblyCreator
         _type.Methods.Add(constructor);
         var il2 = constructor.Body.GetILProcessor();
         il2.Emit(Mono.Cecil.Cil.OpCodes.Ret);
-        asm.Write(Globals.NEWPATH);
+        asm.Write(path);
     }
 }

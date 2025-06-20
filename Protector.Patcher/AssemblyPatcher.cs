@@ -43,12 +43,14 @@ public class AssemblyPatcher
                 throw new InvalidOperationException($"[PATCHER]: Type {op.Type.FullName} already has a provider field.");
             }
         }
+
         Console.WriteLine($"[PATCHER]: Patching completed for assembly {_assembly.Name.Name}.");
         string nativeDll = JsonConvert.SerializeObject(_nativeObjects, Formatting.Indented);
-        File.WriteAllBytes(Globals.NATIVEDLL, Encoding.UTF8.GetBytes(nativeDll));
-        _assembly.Write(Globals.NEWDLLPATH(_assembly.Name.Name));
+        File.WriteAllBytes(PatcherHelper.GetNativeDllPath(Path.GetDirectoryName(_assembly.MainModule.FileName)!), Encoding.UTF8.GetBytes(nativeDll));
+        string patchPath = PatcherHelper.GetNewDllPath(Path.GetFileNameWithoutExtension(_assembly.MainModule.FileName));
+        _assembly.Write(patchPath);
         _assembly.Dispose();
-        Console.WriteLine($"[PATCHER]: Assembly {_assembly.Name.Name} patched and written to {Globals.NEWDLLPATH(_assembly.Name.Name)}.");
+        Console.WriteLine($"[PATCHER]: Assembly {_assembly.Name.Name} patched and written to {patchPath}.");
     }
 
     public void AddOperation(PatchOperation operation)

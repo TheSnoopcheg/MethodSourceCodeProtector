@@ -67,4 +67,12 @@ public static class PatcherHelper
 
         return sb.ToString();
     }
+    public static string GetNewDllPath(string name)
+    {
+        return @$"{name}.Patched.dll";
+    }
+    public static string GetNativeDllPath(string path)
+    {
+        return Path.Combine(path, "Native.dll");
+    }
 }
