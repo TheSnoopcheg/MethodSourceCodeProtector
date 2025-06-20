@@ -23,14 +23,17 @@ public class AssemblyPatcher
     {
         foreach(var op in _operations)
         {
-            if(TryPatchType(op.Type, out var field))
+            if(TryPatchType(op.Type, out var field, out bool needPatchConstructor))
             {
-                PatchConstructor(op.Type, field);
+                if (needPatchConstructor)
+                {
+                    PatchConstructor(op.Type, field);
+                }
                 var asm = CreateAssembly(op.Method);
                 PatchMethod(op.Method, field);
                 var nativeObject = new NativeObject
                 {
-                    Name = $"{op.Method.Module.Name}.{op.Method.Name}`{op.Method.GenericParameters.Count}",
+                    Name = PatcherHelper.GetIdentityNameFromMethodInfo(op.Method),
                     Assembly = asm
                 };
                 _nativeObjects.Add(nativeObject);
@@ -74,7 +77,7 @@ public class AssemblyPatcher
             var body = constructor.Body;
             var il = body.GetILProcessor();
             il.InsertBefore(body.Instructions.Last(), il.Create(OpCodes.Newobj, type.Module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), ".ctor", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public))));
-            il.Emit(OpCodes.Stsfld, field);
+            il.InsertBefore(body.Instructions.Last(), il.Create(OpCodes.Stsfld, field));
             Console.WriteLine($"[PATCHER]: Static constructor patched for type {type.FullName}.");
         }
         else
@@ -90,20 +93,26 @@ public class AssemblyPatcher
             Console.WriteLine($"[PATCHER]: Static constructor created and patched for type {type.FullName}.");
         }
     }
-    private bool TryPatchType(TypeDefinition type, out FieldDefinition field)
+    private bool TryPatchType(TypeDefinition type, out FieldDefinition field, out bool needPatchConstructor)
     {
         var providerField = type.Fields.FirstOrDefault(f => f.Name == "_provider");
         if(providerField is not null)
         {
             Console.WriteLine($"[PATCHER]: Type {type.FullName} already has a provider field.");
             field = providerField;
-            return false;
+            if(providerField.FieldType.FullName != typeof(DynamicMethodProvider).FullName)
+            {
+                throw new InvalidOperationException($"[PATCHER]: Type {type.FullName} has a provider field, but it is not of type {typeof(DynamicMethodProvider).FullName}.");
+            }
+            needPatchConstructor = false;
+            return true;
         }
         Console.WriteLine($"[PATCHER]: Adding provider field to type {type.FullName}.");
         providerField = new FieldDefinition("_provider", Mono.Cecil.FieldAttributes.Private | Mono.Cecil.FieldAttributes.Static, type.Module.ImportReference(typeof(DynamicMethodProvider)));
         type.Fields.Add(providerField);
         field = providerField;
         Console.WriteLine($"[PATCHER]: Provider field added: {providerField.FullName}");
+        needPatchConstructor = true;
         return true;
     }
     private void PatchMethod(MethodDefinition method, FieldDefinition field)
@@ -118,10 +127,32 @@ public class AssemblyPatcher
 
         var methodInfoVar = new VariableDefinition(method.Module.ImportReference(typeof(MethodInfo)));
         body.Variables.Add(methodInfoVar);
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(object), "GetType", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
+        il.Emit(OpCodes.Ldtoken, module.ImportReference(method.DeclaringType));
+        il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
         il.Emit(OpCodes.Ldstr, method.Name);
-        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(System.Type), "GetMethod", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.String")));
+        il.Emit(OpCodes.Ldc_I4, GetBindingFlagsValue(method));
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Ldc_I4, method.Parameters.Count);
+        il.Emit(OpCodes.Newarr, module.ImportReference(typeof(Type)));
+        for (int i = 0; i < method.Parameters.Count; i++)
+        {
+            il.Emit(OpCodes.Dup);
+            il.Emit(OpCodes.Ldc_I4, i);
+            if (method.Parameters[i].ParameterType.IsGenericParameter)
+            {
+                il.Emit(OpCodes.Ldc_I4, ((GenericParameter)method.Parameters[i].ParameterType).Position);
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "MakeGenericMethodParameter", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.Int32")));
+            }
+            else
+            {
+                il.Emit(OpCodes.Ldtoken, method.Parameters[i].ParameterType);
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+            }
+            il.Emit(OpCodes.Stelem_Ref);
+        }
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(System.Type), "GetMethod", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public,
+            "System.String", "System.Reflection.BindingFlags", "System.Reflection.Binder", "System.Type[]", "System.Reflection.ParameterModifier[]")));
         il.Emit(OpCodes.Stloc, methodInfoVar);
 
         var argTypes = new VariableDefinition(module.ImportReference(typeof(System.Type)).MakeArrayType());
@@ -208,9 +239,26 @@ public class AssemblyPatcher
 
         Console.WriteLine($"[PATCHER]: Method {method.FullName} patched successfully.");
     }
+
+    private int GetBindingFlagsValue(MethodDefinition method)
+    {
+        BindingFlags flags = 0;
+
+        if (method.IsPublic)
+            flags |= BindingFlags.Public;
+        else
+            flags |= BindingFlags.NonPublic;
+
+        if (method.IsStatic)
+            flags |= BindingFlags.Static;
+        else
+            flags |= BindingFlags.Instance;
+
+        return (int)flags;
+    }
     private byte[] CreateAssembly(MethodDefinition method)
     {
-        string name = $"<NativeMethod>_{method.Module.Name}.{method.Name}`{method.GenericParameters.Count}";
+        string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
         AssemblyNameDefinition asmName = new AssemblyNameDefinition(name, new Version(1, 0, 0, 0));
         AssemblyDefinition asm = AssemblyDefinition.CreateAssembly(asmName, name, ModuleKind.Dll);
         TypeDefinition _type = new TypeDefinition(name, "<>", MONOTypeAttributes.Public | MONOTypeAttributes.Class, asm.MainModule.TypeSystem.Object);

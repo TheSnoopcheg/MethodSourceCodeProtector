@@ -1,6 +1,6 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
-using SensotronicaIL.Extensions;
+using Protector.Patcher.Extensions;
 
 namespace Protector.Patcher;
 public class CecilMethodBodyCloner

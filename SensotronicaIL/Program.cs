@@ -10,7 +10,7 @@ public enum MenuOptionType
     Module,
     Type
 }
-public record class MenuOption(object Reference);
+public record class MenuOption(object Reference, int Page, int Selected);
 
 internal class Program
 {
@@ -25,6 +25,8 @@ internal class Program
     {
         string path = string.Empty;
         int selected = 0;
+        int page = 0;
+        int pagesiize = 15;
         bool isOut = false;
         if (args.Length == 0)
         {
@@ -34,6 +36,8 @@ internal class Program
         else
         {
             path = args[0];
+            Console.WriteLine(path);
+            Console.ReadLine();
         }
         try
         {
@@ -44,58 +48,75 @@ internal class Program
                 Console.Clear();
                 Console.WriteLine(selectedMember);
                 Console.WriteLine();
-                for (int i = 0; i < options.Count; i++)
+                var pageOptions = options.Skip(page * pagesiize).Take(pagesiize).ToList();
+                for (int i = 0; i < pageOptions.Count; i++)
                 {
                     if (i == selected)
                     {
                         Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("> " + options[i]);
+                        Console.WriteLine("> " + pageOptions[i]);
                         Console.ResetColor();
                     }
                     else if (options[i] is MethodDefinition method && methodsToPatch.Contains(method))
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("  " + options[i]);
+                        Console.WriteLine("  " + pageOptions[i]);
                         Console.ResetColor();
                     }
                     else
                     {
-                        Console.WriteLine("  " + options[i]);
+                        Console.WriteLine("  " + pageOptions[i]);
                     }
                 }
-                Console.WriteLine("\nPress Enter to select, Up/Down to navigate, Backspace to go back, F to patch, Escape to exit.");
+                Console.WriteLine("\nUse arrow keys to navigate, Enter to select, Backspace to go back, F to finish patching, Escape to exit.");
 
                 key = Console.ReadKey(true).Key;
                 switch (key)
                 {
                     case ConsoleKey.UpArrow:
-                        selected = (selected == 0) ? options.Count - 1 : selected - 1;
+                        selected = (selected == 0) ? pageOptions.Count - 1 : selected - 1;
                         break;
                     case ConsoleKey.DownArrow:
                         if(options.Count == 0) continue; // Prevents error if options is empty
-                        selected = (selected + 1) % options.Count;
+                        selected = (selected + 1) % pageOptions.Count;
+                        break;
+                    case ConsoleKey.RightArrow:
+                        if(page * pagesiize < options.Count - 1)
+                        {
+                            page++;
+                            selected = 0;
+                        }
+                        break;
+                    case ConsoleKey.LeftArrow:
+                        if(page > 0)
+                        {
+                            page--;
+                            selected = 0;
+                        }
                         break;
                     case ConsoleKey.Enter:
                         if (currentState == MenuOptionType.Type)
                         {
                             patcher.AddOperation(new PatchOperation
                             {
-                                Method = (MethodDefinition)options[selected],
+                                Method = (MethodDefinition)pageOptions[selected],
                                 Type = (TypeDefinition)selectedMember!
                             });
-                            methodsToPatch.Add((MethodDefinition)options[selected]);
+                            methodsToPatch.Add((MethodDefinition)pageOptions[selected]);
                             continue;
                         }
-                        menuStack.Push(new MenuOption(options[selected]));
+                        menuStack.Push(new MenuOption(pageOptions[selected], page, selected));
                         selected = 0;
+                        page = 0;
                         currentState++;
                         UpdateOptionsByState(path);
                         break;
                     case ConsoleKey.Backspace:
                         if(menuStack.Count > 1)
                         {
-                            menuStack.Pop();
-                            selected = 0;
+                            var option = menuStack.Pop();
+                            selected = option.Selected;
+                            page = option.Page;
                             currentState--;
                             UpdateOptionsByState(path);
                         }
@@ -103,20 +124,23 @@ internal class Program
                     case ConsoleKey.F:
                         if (methodsToPatch.Count > 0)
                         {
+                            Console.Clear();
                             patcher.PatchAssembly();
                             isOut = true;
                         }
                         break;
                 }
-
-            } while (key != ConsoleKey.Escape || !isOut);
+            } while (key != ConsoleKey.Escape && !isOut);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
         }
         finally
         {
-
+            Console.WriteLine("Press any key to leave");
+            Console.ReadKey();
         }
-        Console.WriteLine("Exiting...");
-        Console.ReadLine();
     }
     static void UpdateOptionsByState(string path)
     {
@@ -125,7 +149,7 @@ internal class Program
             case MenuOptionType.None:
                 AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(path);
                 patcher = new AssemblyPatcher(assembly);
-                menuStack.Push(new MenuOption(assembly));
+                menuStack.Push(new MenuOption(assembly, 0 ,0));
                 options = assembly.Modules.Cast<object>().ToList();
                 currentState = MenuOptionType.Assembly;
                 break;

@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Protector.Patcher\Protector.Patcher.csproj" />
     <ProjectReference Include="..\TestProject\TestProject.csproj" />
   </ItemGroup>
 

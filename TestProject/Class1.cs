@@ -1,5 +1,4 @@
 ﻿using ExternalDependency;
-using System.Threading.Tasks;
 
 namespace TestProject
 {
@@ -16,47 +15,59 @@ namespace TestProject
         {
             MethodB<string>(2, "Hello world");
         }
-        public T MethodB<T>(int n, T smth)
+        public void MethodB<T>(int n, T smth)
         {
-            Func<int, string> func = (x) => $"Value: {x}";
+            Console.WriteLine($"MethodB called with n={n} and smth={smth}");
+            //Func<int, string> func = (x) => $"Value: {x}";
 
-            Console.WriteLine(func(i));
+            //Console.WriteLine(func(i));
 
-            long s = SquareProcessor.Square(i);
+            //long s = SquareProcessor.Square(i);
 
-            Console.WriteLine($"Square of {i} is {s}");
+            //Console.WriteLine($"Square of {i} is {s}");
 
-            i++;
-            ints.Add(i);
-            int[] arr = new int[ints.Count];
-            ints.CopyTo(0, arr, 0, ints.Count);
+            //i++;
+            //ints.Add(i);
+            //int[] arr = new int[ints.Count];
+            //ints.CopyTo(0, arr, 0, ints.Count);
 
-            if (i == 4)
-                handler += MethodA;
-            else
-                handler -= MethodA;
+            //if (i == 4)
+            //    handler += MethodA;
+            //else
+            //    handler -= MethodA;
 
-            int b = 3;
-            b += i;
+            //int b = 3;
+            //b += i;
 
-            var f = () => $"Value lambda: {b}";
-            Console.WriteLine(f());
+            //var f = () => $"Value lambda: {b}";
+            //Console.WriteLine(f());
 
-            Person<int> p = new Person<int> { Name = "Test" };
+            //Person<int> p = new Person<int> { Name = "Test" };
 
-            handler?.Invoke();
+            //handler?.Invoke();
 
-            Console.WriteLine(i);
+            //Console.WriteLine(i);
 
-            p.SetId(i);
-            p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
-            Console.WriteLine($"{smth} {i} {p.Name}");
+            //p.SetId(i);
+            //p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
+            //Console.WriteLine($"{smth} {i} {p.Name}");
 
-            foreach (var item in ints)
-            {
-                Console.WriteLine(item);
-            }
-            return smth;
+            //foreach (var item in ints)
+            //{
+            //    Console.WriteLine(item);
+            //}
+        }
+        public void MethodB<T>(T smth)
+        {
+            Console.WriteLine($"MethodB called with smth={smth}");
+        }
+        public void MethodB(int n)
+        {
+            Console.WriteLine($"MethodB called with n={n}");
+        }
+        public static int MethodB()
+        {
+            return 54;
         }
     }
 }

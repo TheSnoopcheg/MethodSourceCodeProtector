@@ -9,36 +9,61 @@ namespace Protector.Patcher;
 public class DynamicMethodProvider
 {
     private readonly ConcurrentDictionary<string, Delegate> _cache = new();
-    private List<NativeObject> _nativeObjects = [];
+    private List<NativeObject>? _nativeObjects = [];
     public Delegate GetDelegate(MethodInfo method, Type?[]? genericParamTypes)
     {
-        return _cache.GetOrAdd(method.Name, _ =>
+        if(method == null)
+        {
+            throw new ArgumentNullException(nameof(method), "Method cannot be null.");
+        }
+        return _cache.GetOrAdd(PatcherHelper.GetShortIdentityNameFromMethodInfo(method), _ =>
         {
             Type delegateType = GetDelegateType(method, genericParamTypes);
             MethodDefinition? nativeMethod = GetMethodByName(method);
             DynamicMethod dynamicMethod = new DynamicMethod(
-                method.Name,
+                PatcherHelper.GetShortIdentityNameFromMethodInfo(method),
                 GetReturnType(method, genericParamTypes),
                 GetParametersArray(method, genericParamTypes),
                 method.Module,
                 true);
             var il = dynamicMethod.GetILGenerator();
-            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(il, nativeMethod, method.DeclaringType?.GetGenericArguments(), genericParamTypes, Assembly.Load(_nativeObjects.FirstOrDefault(o => o.Name == $"{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}").Assembly));
+            CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(
+                il, 
+                nativeMethod, 
+                method.DeclaringType?.GetGenericArguments(), 
+                genericParamTypes, 
+                Assembly.Load(_nativeObjects.FirstOrDefault(o => o.Name == PatcherHelper.GetIdentityNameFromMethodInfo(method)).Assembly));
             cloner.EmitBody();
             return dynamicMethod.CreateDelegate(delegateType);
         });
     }
     private MethodDefinition GetMethodByName(MethodInfo method)
     {
-        string name = $"{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}";
+        string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
         string nativeDll = File.ReadAllText($@"{AppDomain.CurrentDomain.BaseDirectory}\Native.dll");
-        _nativeObjects = JsonConvert.DeserializeObject<List<NativeObject>>(nativeDll)!;
-        NativeObject nativeObject = _nativeObjects.FirstOrDefault(o => o.Name == name)!;
+        _nativeObjects = JsonConvert.DeserializeObject<List<NativeObject>>(nativeDll);
+        if(_nativeObjects == null || _nativeObjects.Count == 0)
+        {
+            throw new InvalidOperationException("No native objects found. Ensure Native.dll is correctly formatted and contains the necessary data.");
+        }
+        NativeObject? nativeObject = _nativeObjects.FirstOrDefault(o => o.Name == name);
+        if(nativeObject == null)
+        {
+            throw new InvalidOperationException($"No native object found for method {method.Name} in module {method.Module.Name} with {method.GetGenericArguments().Length} generic arguments.");
+        }
         var asmBytes = nativeObject.Assembly;
         AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(asmBytes));
         ModuleDefinition module = assembly.MainModule;
-        TypeDefinition? typeDef = module.GetType($"<NativeMethod>_{method.Module.Name}.{method.Name}`{method.GetGenericArguments().Length}.<>");
-        MethodDefinition resMethod = typeDef?.Methods.FirstOrDefault(m => m.Name == method.Name)!;
+        TypeDefinition? typeDef = module.GetType($"{name}.<>");
+        if(typeDef == null)
+        {
+            throw new Exception($"Type definition for method {method.Name} not found in module {method.Module.Name}.");
+        }
+        MethodDefinition? resMethod = typeDef?.Methods.FirstOrDefault(m => m.Name == method.Name);
+        if (resMethod == null)
+        {
+            throw new Exception($"Method {method.Name} not found in type {typeDef.Name} in module {method.Module.Name}.");
+        }
         return resMethod;
     }
     private static Type? GetReturnType(MethodInfo methodInfo, Type?[]? genericParamTypes)
