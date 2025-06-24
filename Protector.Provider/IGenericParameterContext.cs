@@ -1,7 +1,7 @@
 ﻿using Mono.Cecil;
 using Mono.Collections.Generic;
 
-namespace Protector.Patcher;
+namespace Protector.Provider;
 
 public interface IGenericParameterContext
 {

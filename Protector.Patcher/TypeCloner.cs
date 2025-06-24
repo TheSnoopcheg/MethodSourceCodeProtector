@@ -18,7 +18,7 @@ public class TypeCloner
         _context = context;
     }
 
-    public TypeDefinition Clone(IGenericParameterContext? context = null)
+    public TypeDefinition Clone()
     {
         if (_context.TypeMap.ContainsKey(_sourceType))
         {

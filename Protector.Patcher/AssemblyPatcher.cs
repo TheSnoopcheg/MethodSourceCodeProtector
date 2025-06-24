@@ -1,12 +1,13 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Cecil.Rocks;
+using Newtonsoft.Json;
 using System.Reflection;
+using System.Text;
+using Protector.Provider;
 
 using MONOTypeAttributes = Mono.Cecil.TypeAttributes;
 using MONOMethodAttributes = Mono.Cecil.MethodAttributes;
-using Mono.Cecil.Rocks;
-using Newtonsoft.Json;
-using System.Text;
 
 namespace Protector.Patcher;
 

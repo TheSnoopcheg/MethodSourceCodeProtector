@@ -5,20 +5,18 @@ using System.Reflection.Emit;
 
 using Cci = Mono.Cecil.Cil;
 
-namespace Protector.Patcher;
+namespace Protector.Provider;
 
 public class CecilToRefMethodBodyCloner
 {
     private readonly ILGenerator _il;
     private readonly MethodDefinition _sourceMethod;
-    private readonly Assembly _sourceAssembly;
     private readonly Type[]? _typeGenericArgs;
     private readonly Type[]? _methodGenericArgs;
     private readonly Dictionary<Cci.Instruction, Label> _branchLabels = new Dictionary<Cci.Instruction, Label>();
 
-    public CecilToRefMethodBodyCloner(ILGenerator il, MethodDefinition sourceMethod, Type[]? typeGenericArgs, Type?[]? methodGenericArgs, Assembly assembly)
+    public CecilToRefMethodBodyCloner(ILGenerator il, MethodDefinition sourceMethod, Type[]? typeGenericArgs, Type?[]? methodGenericArgs)
     {
-        _sourceAssembly = assembly;
 
         _il = il;
         _sourceMethod = sourceMethod;
@@ -218,10 +216,6 @@ public class CecilToRefMethodBodyCloner
             return ResolveType(typeRef.GetElementType(), context)?.MakeByRefType();
         }
         string typeFullName = typeRef.FullName.Replace('/', '+');
-        if (typeRef.Scope.Name == _sourceAssembly.GetName().Name || typeRef.Scope.Name == Path.GetFileNameWithoutExtension(_sourceAssembly.Location))
-        {
-            return _sourceAssembly.GetType(typeFullName, false);
-        }
         try
         {
             string assemblyQualifiedName = $"{typeFullName}, {typeRef.Scope}";

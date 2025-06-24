@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
 
-namespace Protector.Patcher;
+namespace Protector.Provider;
 
 public class DynamicMethodProvider
 {
@@ -31,8 +31,7 @@ public class DynamicMethodProvider
                 il, 
                 nativeMethod, 
                 method.DeclaringType?.GetGenericArguments(), 
-                genericParamTypes, 
-                Assembly.Load(_nativeObjects.FirstOrDefault(o => o.Name == PatcherHelper.GetIdentityNameFromMethodInfo(method)).Assembly));
+                genericParamTypes);
             cloner.EmitBody();
             return dynamicMethod.CreateDelegate(delegateType);
         });
@@ -66,7 +65,7 @@ public class DynamicMethodProvider
         }
         return resMethod;
     }
-    private static Type? GetReturnType(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    private Type? GetReturnType(MethodInfo methodInfo, Type?[]? genericParamTypes)
     {
         
         if (methodInfo.ReturnType.IsGenericParameter)
@@ -75,7 +74,7 @@ public class DynamicMethodProvider
         }
         return methodInfo.ReturnType;
     }
-    private static Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    private Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? genericParamTypes)
     {
         List<Type> types = [];
         if(!methodInfo.IsStatic)
@@ -86,7 +85,7 @@ public class DynamicMethodProvider
         {
             if (p.ParameterType.IsGenericParameter)
             {
-                return genericParamTypes[p.ParameterType.GenericParameterPosition]!;
+                return genericParamTypes![p.ParameterType.GenericParameterPosition]!;
             }
             return p.ParameterType;
         }));
@@ -98,9 +97,9 @@ public class DynamicMethodProvider
     /// </summary>
     /// <param name="methodInfo">The method whose signature to match.</param>
     /// <returns>A delegate Type, like typeof(Action<int>) or typeof(Func<string, bool>).</returns>
-    private static Type GetDelegateType(MethodInfo methodInfo, Type?[]? genereicParamTypes)
+    private Type GetDelegateType(MethodInfo methodInfo, Type?[]? genericParamTypes)
     {
-        var parameterTypes = GetParametersArray(methodInfo, genereicParamTypes);
+        var parameterTypes = GetParametersArray(methodInfo, genericParamTypes);
 
         if (methodInfo.ReturnType == typeof(void))
         {
@@ -118,7 +117,7 @@ public class DynamicMethodProvider
         }
         else
         {
-            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, genereicParamTypes) }).ToArray();
+            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, genericParamTypes) }).ToArray();
 
             Type openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
             if (openFuncType == null)

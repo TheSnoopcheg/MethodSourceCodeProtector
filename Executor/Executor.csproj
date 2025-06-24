@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Protector.Provider\Protector.Provider.csproj" />
     <ProjectReference Include="..\TestProject\TestProject.csproj" />
   </ItemGroup>
 

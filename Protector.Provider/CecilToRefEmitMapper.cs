@@ -2,7 +2,7 @@
 
 using NETOpcodes = System.Reflection.Emit.OpCodes;
 
-namespace Protector.Patcher;
+namespace Protector.Provider;
 public static class CecilToRefEmitMapper
 {
     private static readonly Dictionary<Code, System.Reflection.Emit.OpCode> _opCodeMap =
