@@ -1,9 +1,7 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
-using Newtonsoft.Json;
 using System.Reflection;
-using System.Text;
 using Protector.Provider;
 
 using MONOTypeAttributes = Mono.Cecil.TypeAttributes;
@@ -46,8 +44,16 @@ public class AssemblyPatcher
         }
 
         Console.WriteLine($"[PATCHER]: Patching completed for assembly {_assembly.Name.Name}.");
-        string nativeDll = JsonConvert.SerializeObject(_nativeObjects, Formatting.Indented);
-        File.WriteAllBytes(PatcherHelper.GetNativeDllPath(Path.GetDirectoryName(_assembly.MainModule.FileName)!), Encoding.UTF8.GetBytes(nativeDll));
+        
+        // maybe we should choose another way to enter path for provider dll
+        using(var modifier = new NativeResourceModifier("Protector.Provider.dll")) 
+        {
+            foreach(var nativeObject in _nativeObjects)
+            {
+                modifier.AddResource(nativeObject.Name, nativeObject.Assembly);
+            }
+            modifier.Save();
+        }
         string patchPath = PatcherHelper.GetNewDllPath(Path.GetFileNameWithoutExtension(_assembly.MainModule.FileName));
         _assembly.Write(patchPath);
         _assembly.Dispose();

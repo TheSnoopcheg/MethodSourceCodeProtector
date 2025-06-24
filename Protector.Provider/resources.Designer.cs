@@ -59,5 +59,14 @@ namespace Protector.Provider {
                 resourceCulture = value;
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to .
+        /// </summary>
+        public static string METHODIDTABLE {
+            get {
+                return ResourceManager.GetString("METHODIDTABLE", resourceCulture);
+            }
+        }
     }
 }

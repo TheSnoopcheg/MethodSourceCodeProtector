@@ -1,5 +1,4 @@
 ﻿using Mono.Cecil;
-using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -9,7 +8,6 @@ namespace Protector.Provider;
 public class DynamicMethodProvider
 {
     private readonly ConcurrentDictionary<string, Delegate> _cache = new();
-    private List<NativeObject>? _nativeObjects = [];
     public Delegate GetDelegate(MethodInfo method, Type?[]? genericParamTypes)
     {
         if(method == null)
@@ -39,18 +37,24 @@ public class DynamicMethodProvider
     private MethodDefinition GetMethodByName(MethodInfo method)
     {
         string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
-        string nativeDll = File.ReadAllText($@"{AppDomain.CurrentDomain.BaseDirectory}\Native.dll");
-        _nativeObjects = JsonConvert.DeserializeObject<List<NativeObject>>(nativeDll);
-        if(_nativeObjects == null || _nativeObjects.Count == 0)
+
+        byte[] nativeObjectsInfoData = Convert.FromBase64String(resources.METHODIDTABLE);
+        var nativeObjectsInfo = BinaryListSerializer<NativeObjectInfo>.Deserialize(nativeObjectsInfoData);
+        if(nativeObjectsInfo == null || nativeObjectsInfo.Count == 0)
         {
-            throw new InvalidOperationException("No native objects found. Ensure Native.dll is correctly formatted and contains the necessary data.");
+            throw new Exception("No native objects found in the resource data.");
         }
-        NativeObject? nativeObject = _nativeObjects.FirstOrDefault(o => o.Name == name);
-        if(nativeObject == null)
+        NativeObjectInfo nativeObjectInfo = nativeObjectsInfo.FirstOrDefault(o => o.MethodName == name);
+        if (nativeObjectInfo.Equals(default(NativeObjectInfo)))
         {
-            throw new InvalidOperationException($"No native object found for method {method.Name} in module {method.Module.Name} with {method.GetGenericArguments().Length} generic arguments.");
+            throw new Exception($"Method {method.Name} not found in native objects info.");
         }
-        var asmBytes = nativeObject.Assembly;
+        var asmBytes = resources.ResourceManager.GetObject(nativeObjectInfo.ResourceName) as byte[];
+        if (asmBytes == null)
+        {
+            throw new Exception($"Assembly bytes for method {method.Name} not found in resources.");
+        }
+
         AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(asmBytes));
         ModuleDefinition module = assembly.MainModule;
         TypeDefinition? typeDef = module.GetType($"{name}.<>");
