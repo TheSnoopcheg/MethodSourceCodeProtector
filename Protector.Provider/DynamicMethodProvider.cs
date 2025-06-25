@@ -2,11 +2,22 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.InteropServices;
 
 namespace Protector.Provider;
 
 public class DynamicMethodProvider
 {
+
+    #region PInvoke
+
+    [DllImport("Native.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr GetByteAssembly([MarshalAs(UnmanagedType.LPStr)] string methodName, out ulong size);
+    [DllImport("Native.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void FreeByteAssembly(IntPtr buffer);
+
+    #endregion
+
     private readonly ConcurrentDictionary<string, Delegate> _cache = new();
     public Delegate GetDelegate(MethodInfo method, Type?[]? genericParamTypes)
     {
@@ -38,18 +49,7 @@ public class DynamicMethodProvider
     {
         string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
 
-        byte[] nativeObjectsInfoData = Convert.FromBase64String(resources.METHODIDTABLE);
-        var nativeObjectsInfo = BinaryListSerializer<NativeObjectInfo>.Deserialize(nativeObjectsInfoData);
-        if(nativeObjectsInfo == null || nativeObjectsInfo.Count == 0)
-        {
-            throw new Exception("No native objects found in the resource data.");
-        }
-        NativeObjectInfo nativeObjectInfo = nativeObjectsInfo.FirstOrDefault(o => o.MethodName == name);
-        if (nativeObjectInfo.Equals(default(NativeObjectInfo)))
-        {
-            throw new Exception($"Method {method.Name} not found in native objects info.");
-        }
-        var asmBytes = resources.ResourceManager.GetObject(nativeObjectInfo.ResourceName) as byte[];
+        var asmBytes = GetAssemblyByteArray(name);
         if (asmBytes == null)
         {
             throw new Exception($"Assembly bytes for method {method.Name} not found in resources.");
@@ -65,7 +65,7 @@ public class DynamicMethodProvider
         MethodDefinition? resMethod = typeDef?.Methods.FirstOrDefault(m => m.Name == method.Name);
         if (resMethod == null)
         {
-            throw new Exception($"Method {method.Name} not found in type {typeDef.Name} in module {method.Module.Name}.");
+            throw new Exception($"Method {method.Name} not found in type {typeDef!.Name} in module {method.Module.Name}.");
         }
         return resMethod;
     }
@@ -112,7 +112,7 @@ public class DynamicMethodProvider
                 return typeof(Action);
             }
 
-            Type openActionType = Type.GetType($"System.Action`{parameterTypes.Length}");
+            Type? openActionType = Type.GetType($"System.Action`{parameterTypes.Length}");
             if (openActionType == null)
             {
                 throw new NotSupportedException($"No Action delegate with {parameterTypes.Length} parameters.");
@@ -123,12 +123,39 @@ public class DynamicMethodProvider
         {
             var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, genericParamTypes) }).ToArray();
 
-            Type openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
+            Type? openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
             if (openFuncType == null)
             {
                 throw new NotSupportedException($"No Func delegate with {allTypes.Length} generic arguments.");
             }
             return openFuncType.MakeGenericType(allTypes);
+        }
+    }
+
+    public byte[] GetAssemblyByteArray(string methodName)
+    {
+        IntPtr bufferPtr = IntPtr.Zero;
+        try
+        {
+            bufferPtr = GetByteAssembly(methodName, out ulong size);
+
+            if (bufferPtr == IntPtr.Zero || size == 0)
+            {
+                return null;
+            }
+
+            byte[] managedArray = new byte[size];
+
+            Marshal.Copy(bufferPtr, managedArray, 0, (int)size);
+
+            return managedArray;
+        }
+        finally
+        {
+            if (bufferPtr != IntPtr.Zero)
+            {
+                FreeByteAssembly(bufferPtr);
+            }
         }
     }
 }

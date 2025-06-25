@@ -44,15 +44,14 @@ public class AssemblyPatcher
         }
 
         Console.WriteLine($"[PATCHER]: Patching completed for assembly {_assembly.Name.Name}.");
-        
-        // maybe we should choose another way to enter path for provider dll
-        using(var modifier = new NativeResourceModifier("Protector.Provider.dll")) 
+
+        // maybe we should choose another way to enter path for native dll
+        using (var modifier = new NativeResourceUpdater("Native.dll"))
         {
             foreach(var nativeObject in _nativeObjects)
             {
                 modifier.AddResource(nativeObject.Name, nativeObject.Assembly);
             }
-            modifier.Save();
         }
         string patchPath = PatcherHelper.GetNewDllPath(Path.GetFileNameWithoutExtension(_assembly.MainModule.FileName));
         _assembly.Write(patchPath);

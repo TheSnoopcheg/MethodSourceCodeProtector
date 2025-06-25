@@ -16,7 +16,7 @@ public static class BinaryListSerializer<T> where T : IBinarySerializable<T>
     public static IList<T> Deserialize(byte[] data)
     {
         using var memoryStream = new MemoryStream(data);
-        if (memoryStream.Length == 0)
+        if (memoryStream.Length < 4)
         {
             return new List<T>(0); // Return an empty list if the data is empty
         }

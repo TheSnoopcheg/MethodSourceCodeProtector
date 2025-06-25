@@ -1,4 +1,6 @@
-﻿namespace Protector.Patcher;
+﻿using Protector.Patcher.Extensions;
+
+namespace Protector.Patcher;
 
 public struct NativeObjectInfo : IBinarySerializable<NativeObjectInfo>
 {
@@ -7,12 +9,12 @@ public struct NativeObjectInfo : IBinarySerializable<NativeObjectInfo>
     }
 
     public string MethodName { get; set; } = string.Empty;
-    public string ResourceName { get; set; } = string.Empty;
+    public nint ResourceID { get; set; }
 
     public void Write(BinaryWriter writer)
     {
         writer.Write(MethodName ?? string.Empty);
-        writer.Write(ResourceName ?? string.Empty);
+        writer.Write(ResourceID);
     }
 
     public static NativeObjectInfo Read(BinaryReader reader)
@@ -20,7 +22,7 @@ public struct NativeObjectInfo : IBinarySerializable<NativeObjectInfo>
         return new NativeObjectInfo
         {
             MethodName = reader.ReadString(),
-            ResourceName = reader.ReadString()
+            ResourceID = reader.ReadNInt()
         };
     }
 }
