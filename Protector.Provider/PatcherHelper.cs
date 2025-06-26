@@ -14,7 +14,9 @@ public static class PatcherHelper
         sb.Append('.');
         if(method.DeclaringType != null)
         {
-            sb.Append(method.DeclaringType.FullName);
+            sb.Append(method.DeclaringType.Namespace);
+            sb.Append('.');
+            sb.Append(method.DeclaringType.Name);
         }
         else
         {
@@ -38,7 +40,9 @@ public static class PatcherHelper
         sb.Append('.');
         if(method.DeclaringType != null)
         {
-            sb.Append(method.DeclaringType.FullName);
+            sb.Append(method.DeclaringType.Namespace);
+            sb.Append('.');
+            sb.Append(method.DeclaringType.Name);
         }
         else
         {

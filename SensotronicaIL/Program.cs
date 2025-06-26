@@ -1,4 +1,5 @@
 ﻿using Mono.Cecil;
+using Mono.Cecil.Rocks;
 using Protector.Patcher;
 
 namespace Protector.Visual;
@@ -143,6 +144,30 @@ internal class Program
             Console.ReadKey();
         }
     }
+
+    static void FindMethodsToPatchByAttribute(AssemblyDefinition asm)
+    {
+        string attributeName = "ProtectAttribute";
+        foreach (var module in asm.Modules)
+        {
+            foreach (var type in module.Types)
+            {
+                foreach (var method in type.Methods)
+                {
+                    if (method.CustomAttributes.Any(a => a.AttributeType.Name == attributeName))
+                    {
+                        patcher.AddOperation(new PatchOperation
+                        {
+                            Method = method,
+                            Type = type
+                        });
+                        methodsToPatch.Add(method);
+                    }
+                }
+            }
+        }
+    }
+
     static void UpdateOptionsByState(string path)
     {
         switch (currentState)
@@ -150,6 +175,7 @@ internal class Program
             case MenuOptionType.None:
                 AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(path);
                 patcher = new AssemblyPatcher(assembly);
+                FindMethodsToPatchByAttribute(assembly);
                 menuStack.Push(new MenuOption(assembly, 0 ,0));
                 options = assembly.Modules.Cast<object>().ToList();
                 currentState = MenuOptionType.Assembly;

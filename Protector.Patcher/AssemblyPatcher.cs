@@ -24,12 +24,13 @@ public class AssemblyPatcher
         {
             if(TryPatchType(op.Type, out var field, out bool needPatchConstructor))
             {
+                var fieldRef = GetFieldReference(op.Type, field);
                 if (needPatchConstructor)
                 {
-                    PatchConstructor(op.Type, field);
+                    PatchConstructor(op.Type, fieldRef);
                 }
-                var asm = CreateAssembly(op.Method);
-                PatchMethod(op.Method, field);
+                var asm = CreateAssembly(op.Method, op.Type);
+                PatchMethod(op.Method, fieldRef, op.Type);
                 var nativeObject = new NativeObject
                 {
                     Name = PatcherHelper.GetIdentityNameFromMethodInfo(op.Method),
@@ -67,6 +68,7 @@ public class AssemblyPatcher
         }
         _operations.Add(operation);
     }
+
     public void RemoveOperation(PatchOperation operation)
     {
         if(operation.Type.Module.Assembly != _assembly)
@@ -76,8 +78,8 @@ public class AssemblyPatcher
         _operations.Remove(operation);
     }   
 
-    private void PatchConstructor(TypeDefinition type, FieldDefinition field)
-    {
+    private void PatchConstructor(TypeDefinition type, FieldReference field)
+    {   
         var constructor = type.Methods.FirstOrDefault(m => m.Name == ".cctor" && m.IsStatic && m.IsSpecialName);
         if (constructor is not null)
         {
@@ -123,7 +125,7 @@ public class AssemblyPatcher
         needPatchConstructor = true;
         return true;
     }
-    private void PatchMethod(MethodDefinition method, FieldDefinition field)
+    private void PatchMethod(MethodDefinition method, FieldReference field, TypeDefinition type)
     {
         Console.WriteLine($"[PATCHER]: Patching method {method.FullName} in type {method.DeclaringType.FullName}.");
         var module = method.Module;
@@ -133,10 +135,15 @@ public class AssemblyPatcher
         body.ExceptionHandlers.Clear();
         var il = body.GetILProcessor();
 
-        var methodInfoVar = new VariableDefinition(method.Module.ImportReference(typeof(MethodInfo)));
-        body.Variables.Add(methodInfoVar);
+        var typeVar = new VariableDefinition(module.ImportReference(typeof(Type)));
+        body.Variables.Add(typeVar);
         il.Emit(OpCodes.Ldtoken, module.ImportReference(method.DeclaringType));
         il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+        il.Emit(OpCodes.Stloc, typeVar);
+
+        var methodInfoVar = new VariableDefinition(method.Module.ImportReference(typeof(MethodInfo)));
+        body.Variables.Add(methodInfoVar);
+        il.Emit(OpCodes.Ldloc, typeVar);
         il.Emit(OpCodes.Ldstr, method.Name);
         il.Emit(OpCodes.Ldc_I4, GetBindingFlagsValue(method));
         il.Emit(OpCodes.Ldnull);
@@ -148,8 +155,18 @@ public class AssemblyPatcher
             il.Emit(OpCodes.Ldc_I4, i);
             if (method.Parameters[i].ParameterType.IsGenericParameter)
             {
-                il.Emit(OpCodes.Ldc_I4, ((GenericParameter)method.Parameters[i].ParameterType).Position);
-                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "MakeGenericMethodParameter", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.Int32")));
+                if (((GenericParameter)method.Parameters[i].ParameterType).Owner == method)
+                {
+                    il.Emit(OpCodes.Ldc_I4, ((GenericParameter)method.Parameters[i].ParameterType).Position);
+                    il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "MakeGenericMethodParameter", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.Int32")));
+                }
+                else
+                {
+                    il.Emit(OpCodes.Ldloc, typeVar);
+                    il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "GetGenericArguments", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
+                    il.Emit(OpCodes.Ldc_I4, ((GenericParameter)method.Parameters[i].ParameterType).Position);
+                    il.Emit(OpCodes.Ldelem_Ref);
+                }
             }
             else
             {
@@ -163,8 +180,29 @@ public class AssemblyPatcher
             "System.String", "System.Reflection.BindingFlags", "System.Reflection.Binder", "System.Type[]", "System.Reflection.ParameterModifier[]")));
         il.Emit(OpCodes.Stloc, methodInfoVar);
 
-        var argTypes = new VariableDefinition(module.ImportReference(typeof(System.Type)).MakeArrayType());
-        body.Variables.Add(argTypes);
+        var typeGenericTypes = new VariableDefinition(module.ImportReference(typeof(System.Type)).MakeArrayType());
+        body.Variables.Add(typeGenericTypes);
+        if(type.HasGenericParameters)
+        {
+            il.Emit(OpCodes.Ldc_I4, type.GenericParameters.Count);
+            il.Emit(OpCodes.Newarr, module.ImportReference(typeof(System.Type)));
+            for(int i = 0; i < type.GenericParameters.Count; i++)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, i);
+                il.Emit(OpCodes.Ldtoken, type.GenericParameters[i]);
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(System.Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+                il.Emit(OpCodes.Stelem_Ref);
+            }
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldnull);
+        }
+        il.Emit(OpCodes.Stloc, typeGenericTypes);
+
+        var methodGenericTypes = new VariableDefinition(module.ImportReference(typeof(System.Type)).MakeArrayType());
+        body.Variables.Add(methodGenericTypes);
         if (method.HasGenericParameters)
         {
             il.Emit(OpCodes.Ldc_I4, method.GenericParameters.Count);
@@ -182,14 +220,15 @@ public class AssemblyPatcher
         {
             il.Emit(OpCodes.Ldnull);
         }
-        il.Emit(OpCodes.Stloc, argTypes);
+        il.Emit(OpCodes.Stloc, methodGenericTypes);
 
         var del = new VariableDefinition(module.ImportReference(typeof(Delegate)));
         body.Variables.Add(del);
         il.Emit(OpCodes.Ldsfld, field);
         il.Emit(OpCodes.Ldloc, methodInfoVar);
-        il.Emit(OpCodes.Ldloc, argTypes);
-        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), "GetDelegate", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Reflection.MethodInfo", "System.Type[]")));
+        il.Emit(OpCodes.Ldloc, typeGenericTypes);
+        il.Emit(OpCodes.Ldloc, methodGenericTypes);
+        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(DynamicMethodProvider), "GetDelegate", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Reflection.MethodInfo", "System.Type[]", "System.Type[]")));
         il.Emit(OpCodes.Stloc, del);
 
 
@@ -264,12 +303,17 @@ public class AssemblyPatcher
 
         return (int)flags;
     }
-    private byte[] CreateAssembly(MethodDefinition method)
+    private byte[] CreateAssembly(MethodDefinition method, TypeDefinition type)
     {
         string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
         AssemblyNameDefinition asmName = new AssemblyNameDefinition(name, new Version(1, 0, 0, 0));
         AssemblyDefinition asm = AssemblyDefinition.CreateAssembly(asmName, name, ModuleKind.Dll);
         TypeDefinition _type = new TypeDefinition(name, "<>", MONOTypeAttributes.Public | MONOTypeAttributes.Class, asm.MainModule.TypeSystem.Object);
+        foreach(var p in type.GenericParameters)
+        {
+            var newGenericParam = new GenericParameter(p.Name, _type);
+            _type.GenericParameters.Add(newGenericParam);
+        }
         asm.MainModule.Types.Add(_type);
         MethodDefinition _method = new MethodDefinition(method.Name, method.Attributes, asm.MainModule.TypeSystem.Void);
         foreach (var p in method.GenericParameters)
@@ -281,7 +325,14 @@ public class AssemblyPatcher
         if (method.ReturnType.IsGenericParameter)
         {
             var gp = (GenericParameter)method.ReturnType;
-            _method.ReturnType = _method.GenericParameters[gp.Position];
+            if(gp.Owner == method)
+            {
+                _method.ReturnType = _method.GenericParameters[gp.Position];
+            }
+            else
+            {
+                _method.ReturnType = _type.GenericParameters[gp.Position];
+            }
         }
         else
         {
@@ -293,7 +344,14 @@ public class AssemblyPatcher
             if (p.ParameterType.IsGenericParameter)
             {
                 var genericParam = (GenericParameter)p.ParameterType;
-                newParameterType = _method.GenericParameters[genericParam.Position];
+                if(genericParam.Owner == method)
+                {
+                    newParameterType = _method.GenericParameters[genericParam.Position];
+                }
+                else
+                {
+                    newParameterType = _type.GenericParameters[genericParam.Position];
+                }
             }
             else
             {
@@ -352,5 +410,13 @@ public class AssemblyPatcher
         }
 
         return resolvedMethod;
+    }
+
+    private FieldReference GetFieldReference(TypeDefinition type, FieldDefinition field)
+    {
+        var genericType = type.MakeGenericInstanceType(type.GenericParameters.ToArray());
+        var fieldRef = new FieldReference(field.Name, field.FieldType, genericType);
+        fieldRef = type.Module.ImportReference(fieldRef);
+        return fieldRef;
     }
 }

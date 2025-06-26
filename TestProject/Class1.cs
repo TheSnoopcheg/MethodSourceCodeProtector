@@ -2,7 +2,7 @@
 
 namespace TestProject
 {
-    public class Class1
+    public class Class1<U>
     {
         private int i = 0;
         public event Action handler;
@@ -13,9 +13,10 @@ namespace TestProject
         }
         public void MethodA()
         {
-            MethodB<string>(2, "Hello world");
+            //MethodB<string>(2, "Hello world");
         }
-        public void MethodB<T>(int n, T smth)
+        [Protect]
+        public void MethodB<T>(U n, T smth)
         {
             Console.WriteLine($"MethodB called with n={n} and smth={smth}");
             //Func<int, string> func = (x) => $"Value: {x}";
@@ -57,14 +58,17 @@ namespace TestProject
             //    Console.WriteLine(item);
             //}
         }
+        [Protect]
         public void MethodB<T>(T smth)
         {
             Console.WriteLine($"MethodB called with smth={smth}");
         }
+        [Protect]
         public void MethodB(int n)
         {
             Console.WriteLine($"MethodB called with n={n}");
         }
+        [Protect]
         public static int MethodB()
         {
             return 54;

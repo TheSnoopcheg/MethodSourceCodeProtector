@@ -15,7 +15,7 @@ public class CecilToRefMethodBodyCloner
     private readonly Type[]? _methodGenericArgs;
     private readonly Dictionary<Cci.Instruction, Label> _branchLabels = new Dictionary<Cci.Instruction, Label>();
 
-    public CecilToRefMethodBodyCloner(ILGenerator il, MethodDefinition sourceMethod, Type[]? typeGenericArgs, Type?[]? methodGenericArgs)
+    public CecilToRefMethodBodyCloner(ILGenerator il, MethodDefinition sourceMethod, Type?[]? typeGenericArgs, Type?[]? methodGenericArgs)
     {
 
         _il = il;

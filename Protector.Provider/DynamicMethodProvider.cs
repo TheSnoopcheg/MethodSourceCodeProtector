@@ -19,7 +19,7 @@ public class DynamicMethodProvider
     #endregion
 
     private readonly ConcurrentDictionary<string, Delegate> _cache = new();
-    public Delegate GetDelegate(MethodInfo method, Type?[]? genericParamTypes)
+    public Delegate GetDelegate(MethodInfo method, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
     {
         if(method == null)
         {
@@ -27,20 +27,20 @@ public class DynamicMethodProvider
         }
         return _cache.GetOrAdd(PatcherHelper.GetShortIdentityNameFromMethodInfo(method), _ =>
         {
-            Type delegateType = GetDelegateType(method, genericParamTypes);
+            Type delegateType = GetDelegateType(method, typeGenericTypes, methodGenericTypes);
             MethodDefinition? nativeMethod = GetMethodByName(method);
             DynamicMethod dynamicMethod = new DynamicMethod(
                 PatcherHelper.GetShortIdentityNameFromMethodInfo(method),
-                GetReturnType(method, genericParamTypes),
-                GetParametersArray(method, genericParamTypes),
+                GetReturnType(method, typeGenericTypes, methodGenericTypes),
+                GetParametersArray(method, typeGenericTypes, methodGenericTypes),
                 method.Module,
                 true);
             var il = dynamicMethod.GetILGenerator();
             CecilToRefMethodBodyCloner cloner = new CecilToRefMethodBodyCloner(
                 il, 
-                nativeMethod, 
-                method.DeclaringType?.GetGenericArguments(), 
-                genericParamTypes);
+                nativeMethod,
+                typeGenericTypes, 
+                methodGenericTypes);
             cloner.EmitBody();
             return dynamicMethod.CreateDelegate(delegateType);
         });
@@ -69,27 +69,47 @@ public class DynamicMethodProvider
         }
         return resMethod;
     }
-    private Type? GetReturnType(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    private Type? GetReturnType(MethodInfo methodInfo, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
     {
-        
         if (methodInfo.ReturnType.IsGenericParameter)
         {
-            return genericParamTypes?[methodInfo.ReturnType.GenericParameterPosition];
+            if (methodInfo.ReturnType.DeclaringMethod != null)
+            {
+                return methodGenericTypes![methodInfo.ReturnType.GenericParameterPosition]!;
+            }
+            else
+            {
+                return typeGenericTypes![methodInfo.ReturnType.GenericParameterPosition]!;
+            }
         }
         return methodInfo.ReturnType;
     }
-    private Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    private Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? typeGenericTypes,  Type?[]? methodGenericTypes)
     {
         List<Type> types = [];
         if(!methodInfo.IsStatic)
         {
-            types.Add(methodInfo.DeclaringType!);
+            if (methodInfo.DeclaringType!.IsGenericTypeDefinition)
+            {
+                types.Add(methodInfo.DeclaringType!.MakeGenericType(typeGenericTypes));
+            }
+            else
+            {
+                types.Add(methodInfo.DeclaringType!);
+            }
         }
         types.AddRange(methodInfo.GetParameters().Select(p =>
         {
             if (p.ParameterType.IsGenericParameter)
             {
-                return genericParamTypes![p.ParameterType.GenericParameterPosition]!;
+                if(p.ParameterType.DeclaringMethod != null)
+                {
+                    return methodGenericTypes![p.ParameterType.GenericParameterPosition]!;
+                }
+                else
+                {
+                    return typeGenericTypes![p.ParameterType.GenericParameterPosition]!;
+                }
             }
             return p.ParameterType;
         }));
@@ -101,9 +121,9 @@ public class DynamicMethodProvider
     /// </summary>
     /// <param name="methodInfo">The method whose signature to match.</param>
     /// <returns>A delegate Type, like typeof(Action<int>) or typeof(Func<string, bool>).</returns>
-    private Type GetDelegateType(MethodInfo methodInfo, Type?[]? genericParamTypes)
+    private Type GetDelegateType(MethodInfo methodInfo, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
     {
-        var parameterTypes = GetParametersArray(methodInfo, genericParamTypes);
+        var parameterTypes = GetParametersArray(methodInfo, typeGenericTypes, methodGenericTypes);
 
         if (methodInfo.ReturnType == typeof(void))
         {
@@ -121,7 +141,7 @@ public class DynamicMethodProvider
         }
         else
         {
-            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, genericParamTypes) }).ToArray();
+            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, typeGenericTypes, methodGenericTypes) }).ToArray();
 
             Type? openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
             if (openFuncType == null)
