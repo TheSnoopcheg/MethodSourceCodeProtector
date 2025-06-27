@@ -1,5 +1,6 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 
@@ -51,7 +52,21 @@ public class CecilToRefMethodBodyCloner
     {
         foreach(var variable in _sourceMethod.Body.Variables)
         {
-            var localType = ResolveType(variable.VariableType);
+
+            // TODO: create context for resolving nested types, since it requires knowledge of each generic argument (type and method)
+            // Since this is not implemented, lambdas are not available
+
+            IGenericParameterContext? context = null;
+            if (variable.VariableType.IsNested)
+            {
+                context = new GenericParameterContext
+                {
+                    // Here we need to convert GenericParameter type to TypeReference. 
+                    // And although "TypeReference" is a parent of "GenericParameter", due to the use of Collection from Mono, we can't do this simply using LINQ
+                    //TypeGenericParameters = _sourceMethod.DeclaringType.HasGenericParameters ? _sourceMethod.DeclaringType.GenericParameters : default
+                };
+            }
+            var localType = ResolveType(variable.VariableType, context);
             if(localType != null)
             {
                 _il.DeclareLocal(localType);
@@ -157,7 +172,7 @@ public class CecilToRefMethodBodyCloner
             case Cci.OperandType.InlineArg:
             case Cci.OperandType.ShortInlineArg:
                 var paramDef = (ParameterDefinition)operand;
-                _il.Emit(opCode, paramDef.Index);
+                _il.Emit(opCode, _sourceMethod.HasThis ? paramDef.Index + 1 : paramDef.Index);
                 break;
 
             default:

@@ -2,7 +2,7 @@
 
 namespace TestProject
 {
-    public class Class1<U>
+    public class Class1<U, V>
     {
         private int i = 0;
         public event Action handler;
@@ -19,23 +19,28 @@ namespace TestProject
         public void MethodB<T>(U n, T smth)
         {
             Console.WriteLine($"MethodB called with n={n} and smth={smth}");
+        }
+        
+        [Protect]
+        public void MethodB<T, W>(V a, W e, T smth, U d)
+        {
             //Func<int, string> func = (x) => $"Value: {x}";
 
             //Console.WriteLine(func(i));
 
-            //long s = SquareProcessor.Square(i);
+            long s = SquareProcessor.Square(i);
 
-            //Console.WriteLine($"Square of {i} is {s}");
+            Console.WriteLine($"Square of {i} is {s}");
 
-            //i++;
-            //ints.Add(i);
-            //int[] arr = new int[ints.Count];
-            //ints.CopyTo(0, arr, 0, ints.Count);
+            i++;
+            ints.Add(i);
+            int[] arr = new int[ints.Count];
+            ints.CopyTo(0, arr, 0, ints.Count);
 
-            //if (i == 4)
-            //    handler += MethodA;
-            //else
-            //    handler -= MethodA;
+            if (i == 4)
+                handler += MethodA;
+            else
+                handler -= MethodA;
 
             //int b = 3;
             //b += i;
@@ -43,20 +48,20 @@ namespace TestProject
             //var f = () => $"Value lambda: {b}";
             //Console.WriteLine(f());
 
-            //Person<int> p = new Person<int> { Name = "Test" };
+            Person<int> p = new Person<int> { Name = "Test" };
 
-            //handler?.Invoke();
+            handler?.Invoke();
 
-            //Console.WriteLine(i);
+            Console.WriteLine(i);
 
-            //p.SetId(i);
-            //p.ShowSmth<int, T>(n, (T)smth, i, p.Id);
-            //Console.WriteLine($"{smth} {i} {p.Name}");
+            p.SetId(i);
+            p.ShowSmth<int, T>(2, smth, i, p.Id);
+            Console.WriteLine($"{smth} {i} {p.Name}");
 
-            //foreach (var item in ints)
-            //{
-            //    Console.WriteLine(item);
-            //}
+            foreach (var item in ints)
+            {
+                Console.WriteLine(item);
+            }
         }
         [Protect]
         public void MethodB<T>(T smth)
@@ -64,14 +69,29 @@ namespace TestProject
             Console.WriteLine($"MethodB called with smth={smth}");
         }
         [Protect]
-        public void MethodB(int n)
+        public void MethodB(List<int> n)
         {
-            Console.WriteLine($"MethodB called with n={n}");
+            foreach (var item in n)
+            {
+                Console.WriteLine($"Item: {item}");
+            }
         }
         [Protect]
-        public static int MethodB()
+        public void MethodC(string str, int n)
         {
-            return 54;
+            Writer.Write<int>(n);
+            Writer<int>.Write(n);
+            Writer.Write<string>(str);
+            Writer<string>.Write(str);
+            var operation = new Operation { Name = str };
+            Writer.Write<Operation>(operation);
+            Writer<Operation>.Write(operation);
+        }
+
+        [Protect]
+        public static U MethodBS<T>(U n, V n1)
+        {
+            return n;
         }
     }
 }

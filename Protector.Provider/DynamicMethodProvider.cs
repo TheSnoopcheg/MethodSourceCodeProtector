@@ -25,12 +25,13 @@ public class DynamicMethodProvider
         {
             throw new ArgumentNullException(nameof(method), "Method cannot be null.");
         }
-        return _cache.GetOrAdd(PatcherHelper.GetShortIdentityNameFromMethodInfo(method), _ =>
+        string methodName = PatcherHelper.GetShortIdentityNameFromMethodInfo(method, typeGenericTypes, methodGenericTypes);
+        return _cache.GetOrAdd(methodName, _ =>
         {
             Type delegateType = GetDelegateType(method, typeGenericTypes, methodGenericTypes);
             MethodDefinition? nativeMethod = GetMethodByName(method);
             DynamicMethod dynamicMethod = new DynamicMethod(
-                PatcherHelper.GetShortIdentityNameFromMethodInfo(method),
+                methodName,
                 GetReturnType(method, typeGenericTypes, methodGenericTypes),
                 GetParametersArray(method, typeGenericTypes, methodGenericTypes),
                 method.Module,
@@ -45,6 +46,7 @@ public class DynamicMethodProvider
             return dynamicMethod.CreateDelegate(delegateType);
         });
     }
+
     private MethodDefinition GetMethodByName(MethodInfo method)
     {
         string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);

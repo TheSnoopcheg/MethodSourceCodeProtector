@@ -2,6 +2,9 @@
 
 public static class RTTypes
 {
+
+    // Source: https://learn.microsoft.com/en-us/windows/win32/menurc/resource-types
+
     public static readonly IntPtr CURSOR        = new IntPtr(1);
     public static readonly IntPtr BITMAP        = new IntPtr(2);
     public static readonly IntPtr ICON          = new IntPtr(3);
