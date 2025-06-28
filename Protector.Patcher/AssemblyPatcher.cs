@@ -443,8 +443,16 @@ public class AssemblyPatcher
 
     private FieldReference GetFieldReference(TypeDefinition type, FieldDefinition field)
     {
-        var genericType = type.MakeGenericInstanceType(type.GenericParameters.ToArray());
-        var fieldRef = new FieldReference(field.Name, field.FieldType, genericType);
+        FieldReference? fieldRef = null;
+        if(type.ContainsGenericParameter || type.HasGenericParameters)
+        {
+            var genericType = type.MakeGenericInstanceType(type.GenericParameters.ToArray());
+            fieldRef = new FieldReference(field.Name, field.FieldType, genericType);
+        }
+        else
+        {
+            fieldRef = (FieldReference)field;
+        }
         fieldRef = type.Module.ImportReference(fieldRef);
         return fieldRef;
     }

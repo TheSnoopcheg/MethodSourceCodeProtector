@@ -24,9 +24,9 @@ namespace TestProject
         [Protect]
         public void MethodB<T, W>(V a, W e, T smth, U d)
         {
-            //Func<int, string> func = (x) => $"Value: {x}";
+            Func<int, string> func = (x) => $"Value: {x}";
 
-            //Console.WriteLine(func(i));
+            Console.WriteLine(func(i));
 
             long s = SquareProcessor.Square(i);
 
@@ -42,11 +42,11 @@ namespace TestProject
             else
                 handler -= MethodA;
 
-            //int b = 3;
-            //b += i;
+            int b = 3;
+            b += i;
 
-            //var f = () => $"Value lambda: {b}";
-            //Console.WriteLine(f());
+            var f = () => $"Value lambda: {b}";
+            Console.WriteLine(f());
 
             Person<int> p = new Person<int> { Name = "Test" };
 

@@ -52,20 +52,7 @@ public class CecilToRefMethodBodyCloner
     {
         foreach(var variable in _sourceMethod.Body.Variables)
         {
-
-            // TODO: create context for resolving nested types, since it requires knowledge of each generic argument (type and method)
-            // Since this is not implemented, lambdas are not available
-
-            IGenericParameterContext? context = null;
-            if (variable.VariableType.IsNested)
-            {
-                context = new GenericParameterContext
-                {
-                    // Here we need to convert GenericParameter type to TypeReference. 
-                    // And although "TypeReference" is a parent of "GenericParameter", due to the use of Collection from Mono, we can't do this simply using LINQ
-                    //TypeGenericParameters = _sourceMethod.DeclaringType.HasGenericParameters ? _sourceMethod.DeclaringType.GenericParameters : default
-                };
-            }
+            IGenericParameterContext? context = BuildGenericParameterContext(variable.VariableType, null);
             var localType = ResolveType(variable.VariableType, context);
             if(localType != null)
             {
@@ -82,6 +69,7 @@ public class CecilToRefMethodBodyCloner
             EmitInstruction(instruction);
         }
     }
+
 
     private void EmitInstruction(Cci.Instruction instruction)
     {
@@ -120,11 +108,7 @@ public class CecilToRefMethodBodyCloner
 
             case Cci.OperandType.InlineMethod:
                 var methodRef = (MethodReference)operand;
-                var genericParamContext = new GenericParameterContext
-                {
-                    MethodGenericParameters = methodRef is GenericInstanceMethod genericMethod ? genericMethod.GenericArguments : default,
-                    TypeGenericParameters = methodRef.DeclaringType is GenericInstanceType genericInstanceType ? genericInstanceType.GenericArguments : default
-                };
+                var genericParamContext = BuildGenericParameterContext(null, methodRef);
                 var resolvedMethodBase = ResolveMethod(methodRef, genericParamContext);
 
                 if (resolvedMethodBase is ConstructorInfo constructorInfo)
@@ -143,12 +127,14 @@ public class CecilToRefMethodBodyCloner
 
             case Cci.OperandType.InlineType:
                 var typeRef = (TypeReference)operand;
-                _il.Emit(opCode, ResolveType(typeRef));
+                var typeContext = BuildGenericParameterContext(typeRef, null);
+                _il.Emit(opCode, ResolveType(typeRef, typeContext));
                 break;
 
             case Cci.OperandType.InlineField:
                 var fieldRef = (FieldReference)operand;
-                _il.Emit(opCode, ResolveField(fieldRef));
+                var fieldContext = BuildGenericParameterContext(fieldRef.DeclaringType, null);
+                _il.Emit(opCode, ResolveField(fieldRef, fieldContext));
                 break;
 
             case Cci.OperandType.ShortInlineBrTarget:
@@ -210,10 +196,21 @@ public class CecilToRefMethodBodyCloner
         }
         if (typeRef is GenericInstanceType genericInstance)
         {
-            var elementType = ResolveType(genericInstance.ElementType);
-            var genericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context)).ToArray();
-            if (elementType == null || genericArgs.Any(a => a == null)) return null;
-            return elementType.MakeGenericType(genericArgs!);
+            var elementType = ResolveType(genericInstance.ElementType, context);
+            var allGenericArgs = new List<Type>();
+
+            if (genericInstance.IsNested && genericInstance.ContainsGenericParameter)
+            {
+                var declaringTypeArgs = genericInstance.DeclaringType.GenericParameters.Select(p => ResolveType(p, context));
+                allGenericArgs.AddRange(declaringTypeArgs);
+            }
+
+            var currentGenericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context));
+            allGenericArgs.AddRange(currentGenericArgs);
+
+            if (elementType == null || allGenericArgs.Any(a => a == null)) return null;
+
+            return elementType.MakeGenericType(allGenericArgs.ToArray()!);
         }
         if (typeRef.IsArray)
         {
@@ -250,13 +247,13 @@ public class CecilToRefMethodBodyCloner
             if (elementMethod == null) throw new NullReferenceException("Cannot find generic method definition.");
 
             var genericArguments = genericInstanceMethod.GenericArguments
-                .Select(arg => ResolveType(arg))
+                .Select(arg => ResolveType(arg, context))
                 .ToArray();
             if (genericArguments.Any(a => a == null)) throw new InvalidOperationException("Failed to resolve generic arguments for method instance.");
             return elementMethod.MakeGenericMethod(genericArguments);
         }
 
-        var declaringType = ResolveType(methodRef.DeclaringType);
+        var declaringType = ResolveType(methodRef.DeclaringType, context);
         if (declaringType == null) throw new NullReferenceException($"Could not resolve type: {methodRef.DeclaringType.FullName}");
 
         Type?[] paramTypes = [];
@@ -284,9 +281,38 @@ public class CecilToRefMethodBodyCloner
         return declaringType.GetMethod(methodRef.Name, bindingFlags, null, paramTypes!, null);
     }
 
-    private FieldInfo? ResolveField(FieldReference fieldRef)
+    private FieldInfo? ResolveField(FieldReference fieldRef, IGenericParameterContext context)
     {
-        var declaringType = ResolveType(fieldRef.DeclaringType);
+        var declaringType = ResolveType(fieldRef.DeclaringType, context);
         return declaringType.GetField(fieldRef.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+    }
+
+    private IGenericParameterContext? BuildGenericParameterContext(TypeReference? type, MethodReference? method)
+    {
+        IGenericParameterContext? context = new GenericParameterContext();
+
+        context.MethodGenericParameters = method is GenericInstanceMethod genericMethod ? genericMethod.GenericArguments : null;
+
+        if (method?.DeclaringType is GenericInstanceType genericType)
+        {
+            context.TypeGenericParameters = genericType.GenericArguments;
+        }
+        if (type != null)
+        {
+            if (type.IsNested && type.ContainsGenericParameter)
+            {
+                Collection<TypeReference>? typeReferences = [];
+                if (_sourceMethod.DeclaringType.HasGenericParameters)
+                {
+                    foreach (var param in _sourceMethod.DeclaringType.GenericParameters)
+                    {
+                        typeReferences.Add(param);
+                    }
+                }
+                context.TypeGenericParameters = typeReferences;
+            }
+        }
+
+        return context;
     }
 }
