@@ -114,10 +114,6 @@ public static class PatcherHelper
     }
     public static string GetNewDllPath(string name)
     {
-        return @$"{name}.Patched.dll";
-    }
-    public static string GetNativeDllPath(string path)
-    {
-        return Path.Combine(path, "Native.dll");
+        return Path.ChangeExtension(name, ".Patched.dll");
     }
 }

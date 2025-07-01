@@ -60,14 +60,14 @@ public class AssemblyPatcher
 
         // maybe we should choose another way to enter path for native dll
         // for now Native.dll should be in the same folder as the executable file
-        using (var modifier = new NativeResourceUpdater("Native.dll"))
+        using (var modifier = new NativeResourceUpdater($"{Path.GetDirectoryName(_assembly.MainModule.FileName)}\\Native.dll"))
         {
             foreach(var nativeObject in _nativeObjects)
             {
                 modifier.AddResource(nativeObject.Name, nativeObject.Assembly);
             }
         }
-        string patchPath = PatcherHelper.GetNewDllPath(Path.GetFileNameWithoutExtension(_assembly.MainModule.FileName));
+        string patchPath = PatcherHelper.GetNewDllPath(_assembly.MainModule.FileName);
         _assembly.Write(patchPath);
         _assembly.Dispose();
         Console.WriteLine($"[PATCHER]: Assembly {_assembly.Name.Name} patched and written to {patchPath}.");

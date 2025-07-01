@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36127.28
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Protector.Visual", "SensotronicaIL\Protector.Visual.csproj", "{0716DE16-8EFB-400A-B8C9-A20908B0974E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Protector.Visual", "Protector.Visual\Protector.Visual.csproj", "{0716DE16-8EFB-400A-B8C9-A20908B0974E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestProject", "TestProject\TestProject.csproj", "{5CCDDF85-9185-4E2D-9854-606E0DADF18B}"
 EndProject
