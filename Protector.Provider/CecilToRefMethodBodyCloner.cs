@@ -1,6 +1,7 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
+using Protector.Provider.Extensions;
 using System.Reflection;
 using System.Reflection.Emit;
 
@@ -160,6 +161,40 @@ public class CecilToRefMethodBodyCloner
                 var paramDef = (ParameterDefinition)operand;
                 _il.Emit(opCode, _sourceMethod.HasThis ? paramDef.Index + 1 : paramDef.Index);
                 break;
+            case Cci.OperandType.InlineTok:
+                if (operand is TypeReference tokenTypeRef)
+                {
+                    var typeContextTok = BuildGenericParameterContext(tokenTypeRef, null);
+                    _il.Emit(opCode, ResolveType(tokenTypeRef, typeContextTok));
+                }
+                else if (operand is MethodReference tokenMethodRef)
+                {
+                    var genericParamContextTok = BuildGenericParameterContext(null, tokenMethodRef);
+                    var resolvedMethodBaseTok = ResolveMethod(tokenMethodRef, genericParamContextTok);
+
+                    if (resolvedMethodBaseTok is ConstructorInfo constructorInfoTok)
+                    {
+                        _il.Emit(opCode, constructorInfoTok);
+                    }
+                    else if (resolvedMethodBaseTok is MethodInfo methodInfo)
+                    {
+                        _il.Emit(opCode, methodInfo);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Could not resolve method token: {tokenMethodRef.FullName}");
+                    }
+                }
+                else if (operand is FieldReference tokenFieldRef)
+                {
+                    var fieldContextTok = BuildGenericParameterContext(tokenFieldRef.DeclaringType, null);
+                    _il.Emit(opCode, ResolveField(tokenFieldRef, fieldContextTok));
+                }
+                else
+                {
+                    throw new NotSupportedException($"Unsupported operand type for InlineTok: {operand?.GetType().FullName}");
+                }
+                break;
 
             default:
                 throw new NotSupportedException($"Operand type not supported: {instruction.OpCode.OperandType}");
@@ -178,7 +213,7 @@ public class CecilToRefMethodBodyCloner
                 }
                 else
                 {
-                    return ResolveType(context.MethodGenericParameters[genericParam.Position]);
+                    return ResolveType(context.MethodGenericParameters[genericParam.Position], context);
                 }
             }
             else if (genericParam.Owner is TypeReference)
@@ -189,7 +224,7 @@ public class CecilToRefMethodBodyCloner
                 }
                 else
                 {
-                    return ResolveType(context.TypeGenericParameters[genericParam.Position]);
+                    return ResolveType(context.TypeGenericParameters[genericParam.Position], context);
                 }
             }
             throw new InvalidOperationException($"Unbound generic parameter: {genericParam.Name}");
@@ -199,7 +234,7 @@ public class CecilToRefMethodBodyCloner
             var elementType = ResolveType(genericInstance.ElementType, context);
             var allGenericArgs = new List<Type>();
 
-            if (genericInstance.IsNested && genericInstance.ContainsGenericParameter)
+            if (genericInstance.IsNested && genericInstance.IsCompilerGenerated())
             {
                 var declaringTypeArgs = genericInstance.DeclaringType.GenericParameters.Select(p => ResolveType(p, context));
                 allGenericArgs.AddRange(declaringTypeArgs);
@@ -207,6 +242,12 @@ public class CecilToRefMethodBodyCloner
 
             var currentGenericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context));
             allGenericArgs.AddRange(currentGenericArgs);
+
+            if(allGenericArgs.Count == 0 && typeRef.IsAsyncStateMachineType())
+            {
+                var genericStateMachineArgs = context.TypeGenericParameters.Select(t => ResolveType(t, context));
+                allGenericArgs.AddRange(genericStateMachineArgs);
+            }
 
             if (elementType == null || allGenericArgs.Any(a => a == null)) return null;
 
@@ -299,7 +340,7 @@ public class CecilToRefMethodBodyCloner
         }
         if (type != null)
         {
-            if (type.IsNested && type.ContainsGenericParameter)
+            if (type.IsNested && type.IsCompilerGenerated())
             {
                 Collection<TypeReference>? typeReferences = [];
                 if (_sourceMethod.DeclaringType.HasGenericParameters)

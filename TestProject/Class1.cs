@@ -7,7 +7,7 @@ namespace TestProject
         private int i = 0;
         public event Action handler;
         private List<int> ints = new List<int>();
-        public Class1(int I )
+        public Class1(int I)
         {
             i = I;
         }

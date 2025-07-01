@@ -339,10 +339,10 @@ public class CecilMethodBodyCloner
         {
             if (instruction.Operand is MemberReference memberRef)
             {
-                var declaringType = memberRef.DeclaringType?.Resolve();
+                var declaringType = memberRef.DeclaringType;
                 if (declaringType != null && declaringType.IsCompilerGenerated())
                 {
-                    requiredTypes.Add(declaringType);
+                    requiredTypes.Add(declaringType.Resolve());
                 }
             }
         }

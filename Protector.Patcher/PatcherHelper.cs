@@ -40,7 +40,17 @@ public static class PatcherHelper
         sb.Append('.');
         if (method.DeclaringType != null)
         {
-            sb.Append(method.DeclaringType.Namespace);
+            if(string.IsNullOrEmpty(method.DeclaringType.Namespace))
+            {
+                if(method.DeclaringType.DeclaringType != null)
+                {
+                    sb.Append(method.DeclaringType.DeclaringType.Namespace);
+                }
+            }
+            else
+            {
+                sb.Append(method.DeclaringType.Namespace);
+            }
             sb.Append('.');
             sb.Append(method.DeclaringType.Name);
         }

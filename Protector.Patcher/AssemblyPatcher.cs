@@ -6,6 +6,7 @@ using Protector.Provider;
 
 using MONOTypeAttributes = Mono.Cecil.TypeAttributes;
 using MONOMethodAttributes = Mono.Cecil.MethodAttributes;
+using Protector.Patcher.Extensions;
 
 namespace Protector.Patcher;
 
@@ -22,7 +23,18 @@ public class AssemblyPatcher
     {
         foreach(var op in _operations)
         {
-            if(TryPatchType(op.Type, out var field, out bool needPatchConstructor))
+
+            if (op.Method.IsAsyncMethod())
+            {
+                var asyncAttr = op.Method.CustomAttributes.FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.AsyncStateMachineAttribute");
+                var stateMachineType = asyncAttr?.ConstructorArguments.FirstOrDefault().Value as TypeReference;
+                if (stateMachineType == null) continue;
+
+                op.Type = stateMachineType.Resolve();
+                op.Method = op.Type.Methods.FirstOrDefault(m => m.Name == "MoveNext")!;
+            }
+
+            if (TryPatchType(op.Type, out var field, out bool needPatchConstructor))
             {
                 var fieldRef = GetFieldReference(op.Type, field);
                 if (needPatchConstructor)
