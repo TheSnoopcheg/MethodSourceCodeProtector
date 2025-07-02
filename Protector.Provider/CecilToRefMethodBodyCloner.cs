@@ -232,26 +232,12 @@ public class CecilToRefMethodBodyCloner
         if (typeRef is GenericInstanceType genericInstance)
         {
             var elementType = ResolveType(genericInstance.ElementType, context);
-            var allGenericArgs = new List<Type>();
 
-            if (genericInstance.IsNested && genericInstance.IsCompilerGenerated())
-            {
-                var declaringTypeArgs = genericInstance.DeclaringType.GenericParameters.Select(p => ResolveType(p, context));
-                allGenericArgs.AddRange(declaringTypeArgs);
-            }
+            var currentGenericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context)).ToArray();
 
-            var currentGenericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context));
-            allGenericArgs.AddRange(currentGenericArgs);
+            if (elementType == null || currentGenericArgs.Any(a => a == null)) return null;
 
-            if(allGenericArgs.Count == 0 && typeRef.IsAsyncStateMachineType())
-            {
-                var genericStateMachineArgs = context.TypeGenericParameters.Select(t => ResolveType(t, context));
-                allGenericArgs.AddRange(genericStateMachineArgs);
-            }
-
-            if (elementType == null || allGenericArgs.Any(a => a == null)) return null;
-
-            return elementType.MakeGenericType(allGenericArgs.ToArray()!);
+            return elementType.MakeGenericType(currentGenericArgs!);
         }
         if (typeRef.IsArray)
         {

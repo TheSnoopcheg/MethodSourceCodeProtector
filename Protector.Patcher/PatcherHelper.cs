@@ -1,37 +1,10 @@
 ﻿using Mono.Cecil;
-using System.Reflection;
 using System.Text;
 
 namespace Protector.Patcher;
 
 public static class PatcherHelper
 {
-    public static string GetIdentityNameFromMethodInfo(MethodInfo method)
-    {
-        var sb = new StringBuilder(256);
-        sb.Append("<NativeMethod>_");
-        sb.Append(method.Module.Name);
-        sb.Append('.');
-        if (method.DeclaringType != null)
-        {
-            sb.Append(method.DeclaringType.Namespace);
-            sb.Append('.');
-            sb.Append(method.DeclaringType.Name);
-        }
-        else
-        {
-            sb.Append("GlobalMethods");
-        }
-        sb.Append('.');
-        sb.Append(method.Name);
-        sb.Append('`');
-        sb.Append(method.GetGenericArguments().Length);
-        sb.Append('(');
-        sb.Append(string.Join(',', method.GetParameters().Select(p => p.ParameterType.ToString().Replace('[', '<').Replace(']', '>'))));
-        sb.Append(')');
-
-        return sb.ToString();
-    }
     public static string GetIdentityNameFromMethodInfo(MethodDefinition method)
     {
         var sb = new StringBuilder(256);
@@ -68,52 +41,42 @@ public static class PatcherHelper
 
         return sb.ToString();
     }
-    public static string GetShortIdentityNameFromMethodInfo(MethodInfo method, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
-    {
-        var sb = new StringBuilder(128);
-        sb.Append("<NativeMethod>_");
-        if (method.DeclaringType != null)
-        {
-            sb.Append(method.DeclaringType.Name);
-            if (typeGenericTypes != null)
-            {
-                sb.Append('[');
-                bool first = true;
-                for (int i = 0; i < typeGenericTypes.Length; i++)
-                {
-                    if (!first)
-                        sb.Append(',');
-                    first = false;
-                    sb.Append(typeGenericTypes[i]?.Name);
-                }
-                sb.Append(']');
-            }
-            sb.Append('.');
-        }
-        sb.Append(method.Name);
-        sb.Append('`');
-        sb.Append(method.GetGenericArguments().Length);
-        if (methodGenericTypes != null)
-        {
-            sb.Append('[');
-            bool first = true;
-            for (int i = 0; i < methodGenericTypes.Length; i++)
-            {
-                if (!first)
-                    sb.Append(',');
-                first = false;
-                sb.Append(methodGenericTypes[i]?.Name);
-            }
-            sb.Append(']');
-        }
-        sb.Append('(');
-        sb.Append(string.Join(',', method.GetParameters().Select(p => p.ParameterType)));
-        sb.Append(')');
-
-        return sb.ToString();
-    }
     public static string GetNewDllPath(string name)
     {
         return Path.ChangeExtension(name, ".Patched.dll");
+    }
+
+    public static TypeReference ResolveTypeReference(TypeReference typeRef, ModuleDefinition module, MethodDefinition sourceMethod, MethodDefinition targetMethod)
+    {
+        TypeReference newTypeRef;
+        if (typeRef is GenericParameter genericParam)
+        {
+            if (genericParam.Owner == sourceMethod)
+            {
+                newTypeRef = targetMethod.GenericParameters[genericParam.Position];
+            }
+            else
+            {
+                newTypeRef = targetMethod.DeclaringType.GenericParameters[genericParam.Position];
+            }
+        }
+        else if (typeRef is GenericInstanceType git)
+        {
+            var genericType = module.ImportReference(git.ElementType, targetMethod);
+            var importedReturnType = new GenericInstanceType(genericType);
+
+            foreach (var arg in git.GenericArguments)
+            {
+                TypeReference importedArg = ResolveTypeReference(arg, module, sourceMethod, targetMethod);
+                importedReturnType.GenericArguments.Add(importedArg);
+            }
+            newTypeRef = importedReturnType;
+        }
+        else
+        {
+            newTypeRef = module.ImportReference(typeRef, targetMethod)
+                ?? module.ImportReference(typeRef);
+        }
+        return newTypeRef;
     }
 }

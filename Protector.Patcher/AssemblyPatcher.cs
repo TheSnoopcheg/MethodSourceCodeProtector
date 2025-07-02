@@ -3,10 +3,10 @@ using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
 using System.Reflection;
 using Protector.Provider;
+using Protector.Patcher.Extensions;
 
 using MONOTypeAttributes = Mono.Cecil.TypeAttributes;
 using MONOMethodAttributes = Mono.Cecil.MethodAttributes;
-using Protector.Patcher.Extensions;
 
 namespace Protector.Patcher;
 
@@ -138,6 +138,49 @@ public class AssemblyPatcher
         needPatchConstructor = true;
         return true;
     }
+    private void EmitGenericType(ILProcessor il, GenericInstanceType type, MethodDefinition method, VariableDefinition typeVar)
+    {
+        var module = method.Module;
+        il.Emit(OpCodes.Ldtoken, module.ImportReference(type.ElementType));
+        il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+
+        il.Emit(OpCodes.Ldc_I4, type.GenericArguments.Count);
+        il.Emit(OpCodes.Newarr, module.ImportReference(typeof(Type)));
+        for(int i = 0; i < type.GenericArguments.Count; i++)
+        {
+            il.Emit(OpCodes.Dup);
+            il.Emit(OpCodes.Ldc_I4, i);
+            if (type.GenericArguments[i] is GenericInstanceType git)
+            {
+                EmitGenericType(il, git, method, typeVar);
+            }
+            else if(type.GenericArguments[i] is GenericParameter param)
+            {
+                if (param.Owner == method)
+                {
+                    // If the current parameter is generic and its owner is method, call Type.MakeGenericMethodParameter(index) where index is the index of the generic argument in the method declaration
+                    il.Emit(OpCodes.Ldc_I4, param.Position);
+                    il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "MakeGenericMethodParameter", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.Int32")));
+                }
+                else
+                {
+                    // If the current parameter is generic and its owner is [type], call GetGenericArguments on [type] and take the parameter by index (in the type declaration)
+                    il.Emit(OpCodes.Ldloc, typeVar);
+                    il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "GetGenericArguments", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
+                    il.Emit(OpCodes.Ldc_I4, param.Position);
+                    il.Emit(OpCodes.Ldelem_Ref);
+                }
+            }
+            else
+            {
+                il.Emit(OpCodes.Ldtoken, module.ImportReference(type.GenericArguments[i]));
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+            }
+            il.Emit(OpCodes.Stelem_Ref);
+        }
+
+        il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "MakeGenericType", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Type[]")));
+    }
     private void PatchMethod(MethodDefinition method, FieldReference field, TypeDefinition type)
     {
         Console.WriteLine($"[PATCHER]: Patching method {method.FullName} in type {method.DeclaringType.FullName}.");
@@ -184,6 +227,10 @@ public class AssemblyPatcher
                     il.Emit(OpCodes.Ldc_I4, ((GenericParameter)method.Parameters[i].ParameterType).Position);
                     il.Emit(OpCodes.Ldelem_Ref);
                 }
+            }
+            else if (method.Parameters[i].ParameterType is GenericInstanceType git)
+            {
+                EmitGenericType(il, git, method, typeVar);
             }
             else
             {
@@ -360,42 +407,11 @@ public class AssemblyPatcher
         }
         _type.Methods.Add(_method);
         
-        if (method.ReturnType.IsGenericParameter)
-        {
-            var gp = (GenericParameter)method.ReturnType;
-            if(gp.Owner == method)
-            {
-                _method.ReturnType = _method.GenericParameters[gp.Position];
-            }
-            else
-            {
-                _method.ReturnType = _type.GenericParameters[gp.Position];
-            }
-        }
-        else
-        {
-            _method.ReturnType = asm.MainModule.ImportReference(method.ReturnType, _method);
-        }
-        
+        _method.ReturnType = PatcherHelper.ResolveTypeReference(method.ReturnType, asm.MainModule, method, _method);
+
         foreach (var p in method.Parameters)
         {
-            TypeReference newParameterType;
-            if (p.ParameterType.IsGenericParameter)
-            {
-                var genericParam = (GenericParameter)p.ParameterType;
-                if(genericParam.Owner == method)
-                {
-                    newParameterType = _method.GenericParameters[genericParam.Position];
-                }
-                else
-                {
-                    newParameterType = _type.GenericParameters[genericParam.Position];
-                }
-            }
-            else
-            {
-                newParameterType = asm.MainModule.ImportReference(p.ParameterType, _method);
-            }
+            TypeReference newParameterType = PatcherHelper.ResolveTypeReference(p.ParameterType, asm.MainModule, method, _method);
 
             var newParam = new ParameterDefinition(
                 p.Name,

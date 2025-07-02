@@ -1,10 +1,9 @@
-﻿using Mono.Cecil;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text;
 
 namespace Protector.Provider;
 
-public static class PatcherHelper
+public static class ProviderHelper
 {
     public static string GetIdentityNameFromMethodInfo(MethodInfo method)
     {
@@ -28,42 +27,6 @@ public static class PatcherHelper
         sb.Append(method.GetGenericArguments().Length);
         sb.Append('(');
         sb.Append(string.Join(',', method.GetParameters().Select(p => p.ParameterType.ToString().Replace('[', '<').Replace(']', '>'))));
-        sb.Append(')');
-
-        return sb.ToString();
-    }
-    public static string GetIdentityNameFromMethodInfo(MethodDefinition method)
-    {
-        var sb = new StringBuilder(256);
-        sb.Append("<NativeMethod>_");
-        sb.Append(method.Module.Name);
-        sb.Append('.');
-        if (method.DeclaringType != null)
-        {
-            if (string.IsNullOrEmpty(method.DeclaringType.Namespace))
-            {
-                if (method.DeclaringType.DeclaringType != null)
-                {
-                    sb.Append(method.DeclaringType.DeclaringType.Namespace);
-                }
-            }
-            else
-            {
-                sb.Append(method.DeclaringType.Namespace);
-            }
-            sb.Append('.');
-            sb.Append(method.DeclaringType.Name);
-        }
-        else
-        {
-            sb.Append("GlobalMethods");
-        }
-        sb.Append('.');
-        sb.Append(method.Name);
-        sb.Append('`');
-        sb.Append(method.GenericParameters.Count);
-        sb.Append('(');
-        sb.Append(string.Join(',', method.Parameters.Select(p => p.ParameterType.ToString().Replace('[', '<').Replace(']', '>'))));
         sb.Append(')');
 
         return sb.ToString();
@@ -111,9 +74,5 @@ public static class PatcherHelper
         sb.Append(')');
 
         return sb.ToString();
-    }
-    public static string GetNewDllPath(string name)
-    {
-        return Path.ChangeExtension(name, ".Patched.dll");
     }
 }

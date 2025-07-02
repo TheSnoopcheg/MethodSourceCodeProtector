@@ -25,7 +25,7 @@ public class DynamicMethodProvider
         {
             throw new ArgumentNullException(nameof(method), "Method cannot be null.");
         }
-        string methodName = PatcherHelper.GetShortIdentityNameFromMethodInfo(method, typeGenericTypes, methodGenericTypes);
+        string methodName = ProviderHelper.GetShortIdentityNameFromMethodInfo(method, typeGenericTypes, methodGenericTypes);
         return _cache.GetOrAdd(methodName, _ =>
         {
             Type delegateType = GetDelegateType(method, typeGenericTypes, methodGenericTypes);
@@ -49,7 +49,7 @@ public class DynamicMethodProvider
 
     private MethodDefinition GetMethodByName(MethodInfo method)
     {
-        string name = PatcherHelper.GetIdentityNameFromMethodInfo(method);
+        string name = ProviderHelper.GetIdentityNameFromMethodInfo(method);
 
         var asmBytes = GetAssemblyByteArray(name);
         if (asmBytes == null)

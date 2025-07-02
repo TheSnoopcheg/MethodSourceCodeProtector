@@ -20,9 +20,9 @@ namespace TestProject
         {
             Console.WriteLine($"MethodB called with n={n} and smth={smth}");
         }
-        
+
         [Protect]
-        public void MethodB<T, W>(V a, W e, T smth, U d)
+        public U MethodB<T, W>(V a, W e, T smth, U d)
         {
             Func<int, string> func = (x) => $"Value: {x}";
 
@@ -48,20 +48,21 @@ namespace TestProject
             var f = () => $"Value lambda: {b}";
             Console.WriteLine(f());
 
-            Person<int> p = new Person<int> { Name = "Test" };
+            Person<U> p = new Person<U> { Name = "Test" };
 
             handler?.Invoke();
 
             Console.WriteLine(i);
 
-            p.SetId(i);
-            p.ShowSmth<int, T>(2, smth, i, p.Id);
+            p.SetId(d);
+            p.ShowSmth<U, T>(2, smth, d, p.Id);
             Console.WriteLine($"{smth} {i} {p.Name}");
 
             foreach (var item in ints)
             {
                 Console.WriteLine(item);
             }
+            return d;
         }
         [Protect]
         public void MethodB<T>(T smth)
@@ -92,6 +93,11 @@ namespace TestProject
         public static U MethodBS<T>(U n, V n1)
         {
             return n;
+        }
+        [Protect]
+        public List<int> MethodD(List<int> list, U value)
+        {
+            return list;
         }
     }
 }

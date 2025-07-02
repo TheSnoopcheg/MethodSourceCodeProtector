@@ -132,11 +132,11 @@ internal class Program
                 }
             } while (key != ConsoleKey.Escape && !isOut);
         }
-        //catch (Exception ex)
-        //{
-        //    Console.WriteLine(ex.Message);
-        //    Console.WriteLine(ex.StackTrace);
-        //}
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            Console.WriteLine(ex.StackTrace);
+        }
         finally
         {
             Console.WriteLine("Press any key to leave");

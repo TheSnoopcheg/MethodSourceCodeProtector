@@ -1,13 +1,12 @@
 ﻿using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Protector.Patcher.Extensions;
 
 namespace Protector.Patcher;
 public class CecilMethodBodyCloner
 {
     private readonly MethodDefinition _sourceMethod;
     private readonly MethodDefinition _targetMethod;
-    private readonly CloningContext _context;
+    private readonly ModuleDefinition _targetModule;
 
     private readonly Dictionary<VariableDefinition, VariableDefinition> _variableMap = new Dictionary<VariableDefinition, VariableDefinition>();
     private readonly Dictionary<Instruction, Instruction> _instructionMap = new Dictionary<Instruction, Instruction>();
@@ -16,13 +15,7 @@ public class CecilMethodBodyCloner
     {
         _sourceMethod = sourceMethod;
         _targetMethod = targetMethod;
-        _context = new CloningContext(targetMethod.Module);
-    }
-    internal CecilMethodBodyCloner(MethodDefinition sourceMethod, MethodDefinition targetMethod, CloningContext context)
-    {
-        _sourceMethod = sourceMethod;
-        _targetMethod = targetMethod;
-        _context = context;
+        _targetModule = targetMethod.Module;
     }
 
     public void Clone()
@@ -40,34 +33,8 @@ public class CecilMethodBodyCloner
     {
         foreach(var oldVar in _sourceMethod.Body.Variables)
         {
-            TypeReference newVarType;
-            if (oldVar.VariableType.IsGenericParameter)
-            {
-                var genericParam = oldVar.VariableType as GenericParameter;
-                if (genericParam.Owner == _sourceMethod)
-                {
-                    newVarType = _targetMethod.GenericParameters[genericParam.Position];
-                }
-                else
-                {
-                    newVarType = _targetMethod.DeclaringType.GenericParameters[genericParam.Position];
-                }
-            }
-            else
-            {
-                if (oldVar.VariableType is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
-                {
-                    var newElementType = _context.TargetModule.ImportReference(genericInstanceType.ElementType);
-                    var newDeclaringType = new GenericInstanceType(newElementType);
-                    foreach (var p in _sourceMethod.GenericParameters)
-                    {
-                        newDeclaringType.GenericArguments.Add(_targetMethod.GenericParameters[p.Position]);
-                    }
-                    newVarType = newDeclaringType;
-                }
-                else
-                    newVarType = _context.TargetModule.ImportReference(oldVar.VariableType);
-            }
+            TypeReference newVarType = PatcherHelper.ResolveTypeReference(oldVar.VariableType, _targetModule, _sourceMethod, _targetMethod);
+
             var newVar = new VariableDefinition(newVarType);
             _targetMethod.Body.Variables.Add(newVar);
             _variableMap[oldVar] = newVar;
@@ -91,7 +58,7 @@ public class CecilMethodBodyCloner
             var newInstr = newInstructions[i];
             var oldInstr = _sourceMethod.Body.Instructions[i];
 
-            newInstr = ProcessInstruction(oldInstr, newInstr);
+            ProcessInstruction(oldInstr, newInstr);
         }
         foreach (var instr in newInstructions)
         {
@@ -99,14 +66,13 @@ public class CecilMethodBodyCloner
         }
     }
 
-    //TODO: some refactoring to prevent code duplication
-    private Instruction ProcessInstruction(Instruction oldInstr, Instruction newInstr)
+    private void ProcessInstruction(Instruction oldInstr, Instruction newInstr)
     {
         newInstr.OpCode = oldInstr.OpCode;
 
         if (oldInstr.Operand == null)
         {
-            return newInstr;
+            return;
         }
 
         switch (oldInstr.OpCode.OperandType)
@@ -141,7 +107,7 @@ public class CecilMethodBodyCloner
                 var fieldRef = (FieldReference)oldInstr.Operand;
                 var resolvedFieldRef = ResolveDisplayClassMemberReference(fieldRef) as FieldReference;
 
-                newInstr.Operand = _context.TargetModule.ImportReference(resolvedFieldRef);
+                newInstr.Operand = _targetModule.ImportReference(resolvedFieldRef);
                 break;
 
             case OperandType.InlineMethod:
@@ -149,75 +115,83 @@ public class CecilMethodBodyCloner
 
                 if (methodRef is GenericInstanceMethod oldInstance)
                 {
-                    var newElementMethod = _context.TargetModule.ImportReference(oldInstance.ElementMethod, _targetMethod);
+                    var elementMethod = oldInstance.ElementMethod;
+
+                    var importedDeclaringType = PatcherHelper.ResolveTypeReference(elementMethod.DeclaringType, _targetModule, _sourceMethod, _targetMethod);
+
+                    var newElementMethod = new MethodReference(
+                        elementMethod.Name,
+                        _targetModule.ImportReference(elementMethod.ReturnType, _targetMethod), 
+                        importedDeclaringType) 
+                    {
+                        HasThis = elementMethod.HasThis,
+                        ExplicitThis = elementMethod.ExplicitThis,
+                        CallingConvention = elementMethod.CallingConvention
+                    };
+
+                    foreach (var gp in elementMethod.GenericParameters)
+                    {
+                        newElementMethod.GenericParameters.Add(new GenericParameter(gp.Name, newElementMethod));
+                    }
+
+                    foreach (var p in elementMethod.Parameters)
+                    {
+                        TypeReference parameterTypeToUse;
+                        var baseType = p.ParameterType.IsByReference ? p.ParameterType.GetElementType() : p.ParameterType;
+
+                        if (baseType.IsGenericParameter)
+                        {
+                            parameterTypeToUse = p.ParameterType;
+                        }
+                        else
+                        {
+                            parameterTypeToUse = _targetModule.ImportReference(p.ParameterType, _targetMethod);
+                        }
+
+                        var newParameter = new ParameterDefinition(p.Name, p.Attributes, parameterTypeToUse);
+
+                        if (p.HasConstant)
+                        {
+                            newParameter.Constant = p.Constant;
+                        }
+                        foreach (var ca in p.CustomAttributes)
+                        {
+                            newParameter.CustomAttributes.Add(new CustomAttribute(_targetModule.ImportReference(ca.Constructor)));
+                        }
+                        newElementMethod.Parameters.Add(newParameter);
+                    }
                     var newInstance = new GenericInstanceMethod(newElementMethod);
 
                     foreach (var arg in oldInstance.GenericArguments)
                     {
-                        TypeReference newArg;
-                        if (arg.IsGenericParameter)
-                        {
-                            var gp = (GenericParameter)arg;
-
-                            if (gp.Owner.Equals(_sourceMethod))
-                            {
-                                newArg = _targetMethod.GenericParameters[gp.Position];
-                            }
-                            else
-                            {
-                                newArg = _targetMethod.DeclaringType.GenericParameters[gp.Position];
-                            }
-                        }
-                        else if (arg.IsGenericInstance)
-                        {
-                            newArg = ResolveDisplayClassTypeReference(arg);
-                        }
-                        else
-                        {
-                            newArg = _context.TargetModule.ImportReference(arg, _targetMethod);
-                        }
-                        newInstance.GenericArguments.Add(newArg);
+                        var importedType = PatcherHelper.ResolveTypeReference(arg, _targetModule, _sourceMethod, _targetMethod);
+                        newInstance.GenericArguments.Add(importedType);
                     }
                     newInstr.Operand = newInstance;
                 }
                 else
                 {
                     var resolvedMethodRef = ResolveDisplayClassMemberReference(methodRef) as MethodReference;
-                    newInstr.Operand = _context.TargetModule.ImportReference(resolvedMethodRef, _targetMethod)
-                                       ?? _context.TargetModule.ImportReference(resolvedMethodRef);
+                    newInstr.Operand = _targetModule.ImportReference(resolvedMethodRef, _targetMethod)
+                                       ?? _targetModule.ImportReference(resolvedMethodRef);
                 }
                 break;
             case OperandType.InlineType:
                 var oldTypeRef = (TypeReference)oldInstr.Operand;
-                if (oldTypeRef.IsGenericParameter)
-                {
-                    var gp = (GenericParameter)oldTypeRef;
-                    if (gp.Owner == _sourceMethod)
-                    {
-                        newInstr.Operand = _targetMethod.GenericParameters[gp.Position];
-                    }
-                    else
-                    {
-                        newInstr.Operand = _targetMethod.DeclaringType.GenericParameters[gp.Position];
-                    }
-                }
-                else
-                {
-                    newInstr.Operand = _context.TargetModule.ImportReference(oldTypeRef, _targetMethod);
-                }
+                newInstr.Operand = PatcherHelper.ResolveTypeReference(oldTypeRef, _targetModule, _sourceMethod, _targetMethod);
                 break;
             case OperandType.InlineTok:
                 if (oldInstr.Operand is TypeReference tr)
-                    newInstr.Operand = _context.TargetModule.ImportReference(tr, _targetMethod);
+                    newInstr.Operand = _targetModule.ImportReference(tr, _targetMethod);
                 else if (oldInstr.Operand is FieldReference fr)
                 {
-                    if (fr.DeclaringType.IsGenericInstance) newInstr.Operand = _context.TargetModule.ImportReference(fr);
-                    else newInstr.Operand = _context.TargetModule.ImportReference(fr, _targetMethod);
+                    if (fr.DeclaringType.IsGenericInstance) newInstr.Operand = _targetModule.ImportReference(fr);
+                    else newInstr.Operand = _targetModule.ImportReference(fr, _targetMethod);
                 }
                 else if (oldInstr.Operand is MethodReference mr)
                 {
-                    if (mr.DeclaringType.IsGenericInstance) newInstr.Operand = _context.TargetModule.ImportReference(mr);
-                    else newInstr.Operand = _context.TargetModule.ImportReference(mr, _targetMethod);
+                    if (mr.DeclaringType.IsGenericInstance) newInstr.Operand = _targetModule.ImportReference(mr);
+                    else newInstr.Operand = _targetModule.ImportReference(mr, _targetMethod);
                 }
                 else throw new InvalidOperationException("Invalid token operand.");
                 break;
@@ -225,7 +199,7 @@ public class CecilMethodBodyCloner
             case OperandType.InlineSig:
                 var oldCallSite = oldInstr.Operand as CallSite;
 
-                var newCallSite = new CallSite(_context.TargetModule.ImportReference(oldCallSite.ReturnType, _targetMethod));
+                var newCallSite = new CallSite(_targetModule.ImportReference(oldCallSite.ReturnType, _targetMethod));
 
                 newCallSite.CallingConvention = oldCallSite.CallingConvention;
                 newCallSite.HasThis = oldCallSite.HasThis;
@@ -234,7 +208,7 @@ public class CecilMethodBodyCloner
                 foreach (var param in oldCallSite.Parameters)
                 {
                     newCallSite.Parameters.Add(
-                        new ParameterDefinition(_context.TargetModule.ImportReference(param.ParameterType, _targetMethod))
+                        new ParameterDefinition(_targetModule.ImportReference(param.ParameterType, _targetMethod))
                     );
                 }
 
@@ -253,45 +227,31 @@ public class CecilMethodBodyCloner
             default:
                 throw new NotSupportedException($"Unsupported operand type: {oldInstr.OpCode.OperandType}");
         }
-        return newInstr;
-    }
-    private TypeReference ResolveDisplayClassTypeReference(TypeReference type)
-    {
-        if(type is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
-        {
-            var newElementType = _context.TargetModule.ImportReference(genericInstanceType.ElementType);
-            var newDeclaringType = new GenericInstanceType(newElementType);
-
-            foreach (var p in _sourceMethod.GenericParameters)
-            {
-                newDeclaringType.GenericArguments.Add(_targetMethod.GenericParameters[p.Position]);
-            }
-            return newDeclaringType;
-        }
-        return type;
+        return;
     }
     private MemberReference ResolveDisplayClassMemberReference(MemberReference member)
     {
         var declaringType = member.DeclaringType;
         if (declaringType is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
         {
-            var newElementType = _context.TargetModule.ImportReference(genericInstanceType.ElementType);
+            var newElementType = _targetModule.ImportReference(genericInstanceType.ElementType);
             var newDeclaringType = new GenericInstanceType(newElementType);
 
-            foreach (var p in _sourceMethod.GenericParameters)
+            foreach (var p in genericInstanceType.GenericArguments)
             {
-                newDeclaringType.GenericArguments.Add(_targetMethod.GenericParameters[p.Position]);
+                TypeReference importedType = PatcherHelper.ResolveTypeReference(p, _targetModule, _sourceMethod, _targetMethod);
+                newDeclaringType.GenericArguments.Add(importedType);
             }
 
             if (member is FieldReference field)
             {
-                var importedFieldType = _context.TargetModule.ImportReference(field.FieldType, newDeclaringType);
+                var importedFieldType = _targetModule.ImportReference(field.FieldType, newDeclaringType);
                 return new FieldReference(field.Name, importedFieldType, newDeclaringType);
             }
 
             if (member is MethodReference method)
             {
-                var importedReturnType = _context.TargetModule.ImportReference(method.ReturnType, newDeclaringType);
+                var importedReturnType = _targetModule.ImportReference(method.ReturnType, newDeclaringType);
                 var newMethod = new MethodReference(method.Name, importedReturnType, newDeclaringType)
                 {
                     HasThis = method.HasThis,
@@ -301,7 +261,7 @@ public class CecilMethodBodyCloner
 
                 foreach (var p in method.Parameters)
                 {
-                    var importedParameterType = _context.TargetModule.ImportReference(p.ParameterType, newDeclaringType);
+                    var importedParameterType = _targetModule.ImportReference(p.ParameterType, newDeclaringType);
                     newMethod.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, importedParameterType));
                 }
                 return newMethod;
@@ -322,34 +282,10 @@ public class CecilMethodBodyCloner
                 TryEnd = oldHandler.TryEnd == null ? null : _instructionMap[oldHandler.TryEnd],
                 HandlerStart = _instructionMap[oldHandler.HandlerStart],
                 HandlerEnd = oldHandler.HandlerEnd == null ? null : _instructionMap[oldHandler.HandlerEnd],
-                CatchType = oldHandler.CatchType == null ? null : _context.TargetModule.ImportReference(oldHandler.CatchType, _targetMethod),
+                CatchType = oldHandler.CatchType == null ? null : _targetModule.ImportReference(oldHandler.CatchType, _targetMethod),
                 FilterStart = oldHandler.FilterStart == null ? null : _instructionMap[oldHandler.FilterStart]
             };
             _targetMethod.Body.ExceptionHandlers.Add(newHandler);
-        }
-    }
-
-    // This method is used to clone dependencies of the source method, such as types that are compiler-generated.
-    // Has potential to throw exceptions if the types has generic parameters.
-    // Not used as it is not needed in the current implementation as we remove the method body using Mono.Cecil (-> all compiler-generated types remain in the module).
-    private void CloneDependencies()
-    {
-        var requiredTypes = new HashSet<TypeDefinition>();
-        foreach (var instruction in _sourceMethod.Body.Instructions)
-        {
-            if (instruction.Operand is MemberReference memberRef)
-            {
-                var declaringType = memberRef.DeclaringType;
-                if (declaringType != null && declaringType.IsCompilerGenerated())
-                {
-                    requiredTypes.Add(declaringType.Resolve());
-                }
-            }
-        }
-        foreach (var typeToClone in requiredTypes)
-        {
-            TypeCloner cloner = new TypeCloner(typeToClone, _context);
-            var type = cloner.Clone();
         }
     }
 }
