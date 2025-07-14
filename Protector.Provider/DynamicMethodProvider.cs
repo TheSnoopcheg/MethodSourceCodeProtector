@@ -32,7 +32,7 @@ public class DynamicMethodProvider
             MethodDefinition? nativeMethod = GetMethodByName(method);
             DynamicMethod dynamicMethod = new DynamicMethod(
                 methodName,
-                GetReturnType(method, typeGenericTypes, methodGenericTypes),
+                ResolveType(method.ReturnType, typeGenericTypes, methodGenericTypes),
                 GetParametersArray(method, typeGenericTypes, methodGenericTypes),
                 method.Module,
                 true);
@@ -71,50 +71,48 @@ public class DynamicMethodProvider
         }
         return resMethod;
     }
-    private Type? GetReturnType(MethodInfo methodInfo, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
+
+    private Type ResolveType(Type type, Type?[]? typeGenericTypes, Type?[]? methodGenericTypes)
     {
-        if (methodInfo.ReturnType.IsGenericParameter)
+        if (type.IsGenericParameter)
         {
-            if (methodInfo.ReturnType.DeclaringMethod != null)
+            if (type.DeclaringMethod != null)
             {
-                return methodGenericTypes![methodInfo.ReturnType.GenericParameterPosition]!;
+                return methodGenericTypes![type.GenericParameterPosition]!;
             }
             else
             {
-                return typeGenericTypes![methodInfo.ReturnType.GenericParameterPosition]!;
+                return typeGenericTypes![type.GenericParameterPosition]!;
             }
         }
-        return methodInfo.ReturnType;
+        if (type.IsGenericType)
+        {
+            var genericArgs = type.GetGenericArguments()
+                .Select(t => ResolveType(t, typeGenericTypes, methodGenericTypes)).ToArray();
+            return type.GetGenericTypeDefinition().MakeGenericType(genericArgs);
+        }
+        return type;
     }
+
     private Type[] GetParametersArray(MethodInfo methodInfo, Type?[]? typeGenericTypes,  Type?[]? methodGenericTypes)
     {
         List<Type> types = [];
-        if(!methodInfo.IsStatic)
+        if (!methodInfo.IsStatic)
         {
             if (methodInfo.DeclaringType!.IsGenericTypeDefinition)
             {
                 types.Add(methodInfo.DeclaringType!.MakeGenericType(typeGenericTypes));
+            }
+            else if (methodInfo.DeclaringType!.IsGenericType)
+            {
+                types.Add(ResolveType(methodInfo.DeclaringType!, typeGenericTypes, methodGenericTypes));
             }
             else
             {
                 types.Add(methodInfo.DeclaringType!);
             }
         }
-        types.AddRange(methodInfo.GetParameters().Select(p =>
-        {
-            if (p.ParameterType.IsGenericParameter)
-            {
-                if(p.ParameterType.DeclaringMethod != null)
-                {
-                    return methodGenericTypes![p.ParameterType.GenericParameterPosition]!;
-                }
-                else
-                {
-                    return typeGenericTypes![p.ParameterType.GenericParameterPosition]!;
-                }
-            }
-            return p.ParameterType;
-        }));
+        types.AddRange(methodInfo.GetParameters().Select(p => ResolveType(p.ParameterType, typeGenericTypes, methodGenericTypes)));
         return types.ToArray();
     }
 
@@ -143,7 +141,7 @@ public class DynamicMethodProvider
         }
         else
         {
-            var allTypes = parameterTypes.Concat(new[] { GetReturnType(methodInfo, typeGenericTypes, methodGenericTypes) }).ToArray();
+            var allTypes = parameterTypes.Concat(new[] { ResolveType(methodInfo.ReturnType, typeGenericTypes, methodGenericTypes) }).ToArray();
 
             Type? openFuncType = Type.GetType($"System.Func`{allTypes.Length}");
             if (openFuncType == null)
