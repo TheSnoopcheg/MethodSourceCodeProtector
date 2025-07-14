@@ -99,5 +99,14 @@ namespace TestProject
         {
             return list;
         }
+        [Protect]
+        public static void MethodE(U[][,,][,] values)
+        {
+            Console.WriteLine("MethodE called with values:");
+            foreach (var value in values)
+            {
+                Console.WriteLine(value);
+            }
+        }
     }
 }

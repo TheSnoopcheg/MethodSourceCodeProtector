@@ -232,41 +232,54 @@ public class CecilMethodBodyCloner
     private MemberReference ResolveDisplayClassMemberReference(MemberReference member)
     {
         var declaringType = member.DeclaringType;
+        TypeReference newDeclaringType = null;
+
         if (declaringType is GenericInstanceType genericInstanceType && genericInstanceType.ContainsGenericParameter)
         {
-            var newElementType = _targetModule.ImportReference(genericInstanceType.ElementType);
-            var newDeclaringType = new GenericInstanceType(newElementType);
+            var newElementType = PatcherHelper.ResolveTypeReference(genericInstanceType.ElementType, _targetModule, _sourceMethod, _targetMethod);
+            var createdType = new GenericInstanceType(newElementType);
 
             foreach (var p in genericInstanceType.GenericArguments)
             {
                 TypeReference importedType = PatcherHelper.ResolveTypeReference(p, _targetModule, _sourceMethod, _targetMethod);
-                newDeclaringType.GenericArguments.Add(importedType);
+                createdType.GenericArguments.Add(importedType);
             }
-
-            if (member is FieldReference field)
-            {
-                var importedFieldType = _targetModule.ImportReference(field.FieldType, newDeclaringType);
-                return new FieldReference(field.Name, importedFieldType, newDeclaringType);
-            }
-
-            if (member is MethodReference method)
-            {
-                var importedReturnType = _targetModule.ImportReference(method.ReturnType, newDeclaringType);
-                var newMethod = new MethodReference(method.Name, importedReturnType, newDeclaringType)
-                {
-                    HasThis = method.HasThis,
-                    ExplicitThis = method.ExplicitThis,
-                    CallingConvention = method.CallingConvention
-                };
-
-                foreach (var p in method.Parameters)
-                {
-                    var importedParameterType = _targetModule.ImportReference(p.ParameterType, newDeclaringType);
-                    newMethod.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, importedParameterType));
-                }
-                return newMethod;
-            }
+            newDeclaringType = createdType;
         }
+        else if (declaringType is ArrayType arrayType)
+        {
+            var newElementType = PatcherHelper.ResolveTypeReference(arrayType.ElementType, _targetModule, _sourceMethod, _targetMethod);
+            newDeclaringType = new ArrayType(newElementType, arrayType.Rank);
+        }
+
+        if (newDeclaringType == null)
+        {
+            return member;
+        }
+        if (member is FieldReference field)
+        {
+                var importedFieldType = _targetModule.ImportReference(field.FieldType, newDeclaringType);
+            return new FieldReference(field.Name, importedFieldType, newDeclaringType);
+        }
+
+        if (member is MethodReference method)
+        {
+                var importedReturnType = _targetModule.ImportReference(method.ReturnType, newDeclaringType);
+            var newMethod = new MethodReference(method.Name, importedReturnType, newDeclaringType)
+            {
+                HasThis = method.HasThis,
+                ExplicitThis = method.ExplicitThis,
+                CallingConvention = method.CallingConvention
+            };
+
+            foreach (var p in method.Parameters)
+            {
+                    var importedParameterType = _targetModule.ImportReference(p.ParameterType, newDeclaringType);
+                newMethod.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, importedParameterType));
+            }
+            return newMethod;
+        }
+
         return member;
     }
 

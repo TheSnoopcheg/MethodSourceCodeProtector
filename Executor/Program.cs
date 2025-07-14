@@ -35,6 +35,13 @@ internal class Program
             class1.MethodB<List<int>>([5, 5, 5]);
             Console.WriteLine(Class1<string, int>.MethodBS<int>("string", 8));
             Console.WriteLine(Class1<int, int>.MethodBS<int>(8, 8));
+
+            var r = new int[1][,,][,];
+            r[0] = new int[1, 1, 1][,];
+            r[0][0,0,0] = new int[1, 1] { { 1 } };
+
+            Class1<int, float>.MethodE(r);
+
         }
         catch (Exception ex)
         {

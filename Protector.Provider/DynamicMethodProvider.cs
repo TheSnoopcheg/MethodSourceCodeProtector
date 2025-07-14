@@ -85,11 +85,21 @@ public class DynamicMethodProvider
                 return typeGenericTypes![type.GenericParameterPosition]!;
             }
         }
-        if (type.IsGenericType)
+        else if (type.IsGenericType)
         {
             var genericArgs = type.GetGenericArguments()
                 .Select(t => ResolveType(t, typeGenericTypes, methodGenericTypes)).ToArray();
             return type.GetGenericTypeDefinition().MakeGenericType(genericArgs);
+        }
+        else if (type.IsArray)
+        {
+            var elementType = ResolveType(type.GetElementType()!, typeGenericTypes, methodGenericTypes);
+            int rank = type.GetArrayRank();
+            if (rank == 1)
+            {
+                return elementType.MakeArrayType();
+            }
+            return elementType.MakeArrayType(rank);
         }
         return type;
     }

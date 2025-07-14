@@ -13,8 +13,8 @@ public class CecilToRefMethodBodyCloner
 {
     private readonly ILGenerator _il;
     private readonly MethodDefinition _sourceMethod;
-    private readonly Type[]? _typeGenericArgs;
-    private readonly Type[]? _methodGenericArgs;
+    private readonly Type?[]? _typeGenericArgs;
+    private readonly Type?[]? _methodGenericArgs;
     private readonly Dictionary<Cci.Instruction, Label> _branchLabels = new Dictionary<Cci.Instruction, Label>();
 
     public CecilToRefMethodBodyCloner(ILGenerator il, MethodDefinition sourceMethod, Type?[]? typeGenericArgs, Type?[]? methodGenericArgs)
@@ -201,7 +201,7 @@ public class CecilToRefMethodBodyCloner
         }
     }
 
-    private Type? ResolveType(TypeReference typeRef, IGenericParameterContext? context = null)
+    private Type ResolveType(TypeReference typeRef, IGenericParameterContext? context = null)
     {
         if (typeRef is GenericParameter genericParam)
         {
@@ -209,10 +209,18 @@ public class CecilToRefMethodBodyCloner
             {
                 if (genericParam.Owner == _sourceMethod && _methodGenericArgs != null && genericParam.Position < _methodGenericArgs.Length)
                 {
+                    if(_methodGenericArgs == null)
+                    {
+                        throw new InvalidOperationException($"Unbound method generic parameter: {genericParam.Name}");
+                    }
                     return _methodGenericArgs[genericParam.Position];
                 }
                 else
                 {
+                    if(context == null || context.MethodGenericParameters == null)
+                    {
+                        throw new InvalidOperationException($"Unbound type generic parameter: {genericParam.Name}");
+                    }
                     return ResolveType(context.MethodGenericParameters[genericParam.Position], context);
                 }
             }
@@ -224,22 +232,26 @@ public class CecilToRefMethodBodyCloner
                 }
                 else
                 {
+                    if(context == null || context.TypeGenericParameters == null)
+                    {
+                        throw new InvalidOperationException($"Unbound type generic parameter: {genericParam.Name}");
+                    }
                     return ResolveType(context.TypeGenericParameters[genericParam.Position], context);
                 }
             }
             throw new InvalidOperationException($"Unbound generic parameter: {genericParam.Name}");
         }
-        if (typeRef is GenericInstanceType genericInstance)
+        else if (typeRef is GenericInstanceType genericInstance)
         {
             var elementType = ResolveType(genericInstance.ElementType, context);
 
             var currentGenericArgs = genericInstance.GenericArguments.Select(g => ResolveType(g, context)).ToArray();
 
-            if (elementType == null || currentGenericArgs.Any(a => a == null)) return null;
+            if (elementType == null || currentGenericArgs.Any(a => a == null)) throw new InvalidOperationException($"Could not resolve type: {typeRef.FullName}");
 
             return elementType.MakeGenericType(currentGenericArgs!);
         }
-        if (typeRef.IsArray)
+        else if (typeRef.IsArray)
         {
             var arrayType = (ArrayType)typeRef;
             var elementType = ResolveType(typeRef.GetElementType(), context);
@@ -250,20 +262,29 @@ public class CecilToRefMethodBodyCloner
             }
             return elementType?.MakeArrayType((typeRef as ArrayType)!.Rank);
         }
-        if (typeRef.IsByReference)
+        else if (typeRef.IsByReference)
         {
             return ResolveType(typeRef.GetElementType(), context)?.MakeByRefType();
         }
+        Type? resType = null;
         string typeFullName = typeRef.FullName.Replace('/', '+');
         try
         {
             string assemblyQualifiedName = $"{typeFullName}, {typeRef.Scope}";
-            return Type.GetType(assemblyQualifiedName, true);
+            resType = Type.GetType(assemblyQualifiedName, true);
         }
         catch
         {
-            return Type.GetType(typeFullName, false);
+            resType = Type.GetType(typeFullName, false);
         }
+        finally
+        {
+            if(resType == null)
+            {
+                throw new InvalidOperationException($"Could not resolve type: {typeFullName}");
+            }
+        }
+        return resType;
     }
 
     private MethodBase? ResolveMethod(MethodReference methodRef, IGenericParameterContext? context = null)
@@ -311,7 +332,7 @@ public class CecilToRefMethodBodyCloner
     private FieldInfo? ResolveField(FieldReference fieldRef, IGenericParameterContext context)
     {
         var declaringType = ResolveType(fieldRef.DeclaringType, context);
-        return declaringType.GetField(fieldRef.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+        return declaringType?.GetField(fieldRef.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
     }
 
     private IGenericParameterContext? BuildGenericParameterContext(TypeReference? type, MethodReference? method)

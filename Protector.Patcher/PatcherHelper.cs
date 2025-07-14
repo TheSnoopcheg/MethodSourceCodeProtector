@@ -36,10 +36,29 @@ public static class PatcherHelper
         sb.Append('`');
         sb.Append(method.GenericParameters.Count);
         sb.Append('(');
-        sb.Append(string.Join(',', method.Parameters.Select(p => p.ParameterType.ToString().Replace('[', '<').Replace(']', '>'))));
+        sb.Append(string.Join(',', method.Parameters.Select(p => FormatTypeReference(p.ParameterType))));
         sb.Append(')');
 
         return sb.ToString();
+    }
+    private static string FormatTypeReference(TypeReference type)
+    {
+        if (type is ArrayType arrayType)
+        {
+            var element = FormatTypeReference(arrayType.ElementType);
+            var rank = arrayType.Rank;
+            if (rank == 1 && arrayType.Dimensions.Count == 1 &&
+                arrayType.Dimensions[0].LowerBound == 0 && arrayType.Dimensions[0].UpperBound == -1)
+            {
+                return $"{element}<>";
+            }
+
+            return $"{element}<{new string(',', rank - 1)}>";
+        }
+        else
+        {
+            return type.ToString().Replace('[', '<').Replace(']', '>');
+        }
     }
     public static string GetNewDllPath(string name)
     {
@@ -71,6 +90,12 @@ public static class PatcherHelper
                 importedReturnType.GenericArguments.Add(importedArg);
             }
             newTypeRef = importedReturnType;
+        }
+        else if (typeRef.IsArray)
+        {
+            var arrayType = typeRef as ArrayType;
+            var elementType = ResolveTypeReference(typeRef.GetElementType(), module, sourceMethod, targetMethod);
+            newTypeRef = new ArrayType(elementType, arrayType!.IsVector ? 1 : arrayType.Rank);
         }
         else
         {

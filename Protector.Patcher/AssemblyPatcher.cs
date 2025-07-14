@@ -181,6 +181,46 @@ public class AssemblyPatcher
 
         il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "MakeGenericType", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Type[]")));
     }
+
+    private void EmitArrayType(ILProcessor il, ArrayType array, MethodDefinition method, VariableDefinition typeVar)
+    {
+        var module = method.Module;
+
+        if (array.ElementType is GenericParameter genParam)
+        {
+            if (genParam.Owner == method)
+            {
+                il.Emit(OpCodes.Ldc_I4, genParam.Position);
+                il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "MakeGenericMethodParameter", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.Int32")));
+            }
+            else
+            {
+                il.Emit(OpCodes.Ldloc, typeVar);
+                il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "GetGenericArguments", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
+                il.Emit(OpCodes.Ldc_I4, genParam.Position);
+                il.Emit(OpCodes.Ldelem_Ref);
+            }
+        }
+        else if(array.ElementType is ArrayType arrayType)
+        {
+            EmitArrayType(il, arrayType, method, typeVar);
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldtoken, module.ImportReference(array.ElementType));
+            il.Emit(OpCodes.Call, module.ImportReference(ResolveMethod(typeof(Type), "GetTypeFromHandle", BindingFlags.Default | BindingFlags.Static | BindingFlags.Public, "System.RuntimeTypeHandle")));
+        }
+        if (array.Rank == 1)
+        {
+            il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "MakeArrayType", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public)));
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldc_I4, array.Rank);
+            il.Emit(OpCodes.Callvirt, module.ImportReference(ResolveMethod(typeof(Type), "MakeArrayType", BindingFlags.Default | BindingFlags.Instance | BindingFlags.Public, "System.Int32")));
+        }
+    }
+
     private void PatchMethod(MethodDefinition method, FieldReference field, TypeDefinition type)
     {
         Console.WriteLine($"[PATCHER]: Patching method {method.FullName} in type {method.DeclaringType.FullName}.");
@@ -231,6 +271,10 @@ public class AssemblyPatcher
             else if (method.Parameters[i].ParameterType is GenericInstanceType git)
             {
                 EmitGenericType(il, git, method, typeVar);
+            }
+            else if (method.Parameters[i].ParameterType is ArrayType array)
+            {
+                EmitArrayType(il, array, method, typeVar);
             }
             else
             {
